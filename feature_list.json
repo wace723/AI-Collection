@@ -1,0 +1,228 @@
+{
+  "project": "平台使用费 AI 辅助催收系统",
+  "last_updated": "2026-09-08",
+  "rules": {
+    "single_active_feature": true,
+    "passing_requires_evidence": true,
+    "do_not_skip_verification": true
+  },
+  "status_legend": {
+    "not_started": "功能还没开始做。",
+    "in_progress": "这个功能是当前唯一正在进行的任务。",
+    "blocked": "因为已记录的阻塞问题，当前无法继续推进。",
+    "passing": "要求的验证已经通过，并且证据已经记录。"
+  },
+  "features": [
+    {
+      "id": "infra-001",
+      "priority": 1,
+      "area": "infra",
+      "title": "项目骨架与运行环境",
+      "description": "搭建 backend(FastAPI) + frontend(React/Vite) 骨架，docker-compose，数据库连接，init.sh 可跑通。",
+      "dependencies": [],
+      "status": "not_started",
+      "verification": [
+        "./init.sh 通过，依赖安装成功",
+        "后端 uvicorn 启动成功，/health 返回 200",
+        "前端 npm run dev 启动成功",
+        "数据库迁移 alembic upgrade head 成功"
+      ],
+      "evidence": [],
+      "notes": "MVP 用 SQLite 起步，预留 PostgreSQL 切换。"
+    },
+    {
+      "id": "infra-002",
+      "priority": 2,
+      "area": "infra",
+      "title": "认证授权（JWT）",
+      "description": "JWT 登录/登出/当前用户；角色 COLLECTOR/SUPERVISOR/ADMIN；权限校验中间件。",
+      "dependencies": ["infra-001"],
+      "status": "not_started",
+      "verification": [
+        "登录接口返回 JWT",
+        "/api/auth/me 用 JWT 返回用户信息",
+        "COLLECTOR 访问 /api/config/risk 返回 403",
+        "ADMIN 访问配置接口返回 200"
+      ],
+      "evidence": [],
+      "notes": "种子数据：3 名催收员 + 1 主管 + 1 管理员。"
+    },
+    {
+      "id": "data-001",
+      "priority": 3,
+      "area": "data_ingestion",
+      "title": "CSV 上传与解析（GBK/UTF-8 自动识别）",
+      "description": "支持 37 列 CSV 上传，自动识别 GBK/UTF-8，解析入库到 orders + order_features，列校验。",
+      "dependencies": ["infra-001"],
+      "status": "not_started",
+      "verification": [
+        "上传 UTF-8 CSV → 20 条入库（对应 TC-DATA-01）",
+        "上传 GBK CSV → 中文无乱码（对应 TC-DATA-02）",
+        "列数不足返回 400 并提示缺失列（对应 TC-DATA-03）",
+        "重复订单号去重不重复入库（对应 TC-DATA-04）",
+        "空值字段存 NULL（对应 TC-DATA-05）",
+        "空文件/非 CSV 返回 400（对应 TC-DATA-06/07）"
+      ],
+      "evidence": [],
+      "notes": "用示例文件 平台使用费特征查询_2026_09_08.csv 作为测试数据。"
+    },
+    {
+      "id": "risk-001",
+      "priority": 4,
+      "area": "risk_engine",
+      "title": "Mock 风险概率计算 + RiskProvider 抽象",
+      "description": "实现 RiskProvider 抽象接口 + MockRiskProvider（基于历史缴费历时等加权），返回 0~100，可批量触发。",
+      "dependencies": ["data-001"],
+      "status": "not_started",
+      "verification": [
+        "触发重算后每笔订单 risk_prob ∈ [0,100]（对应 TC-RISK-01）",
+        "risk_tier 按 active 配置映射（对应 TC-RISK-02）",
+        "Provider 接口可切换 mock→algorithm 不改调用方"
+      ],
+      "evidence": [],
+      "notes": "mock 应覆盖高/中/低三档分布，便于测试任务调度。"
+    },
+    {
+      "id": "risk-002",
+      "priority": 5,
+      "area": "risk_engine",
+      "title": "风险档配置（阈值+催收时点，版本化）",
+      "description": "risk_configs + collection_schedules 表；阈值 high/medium 可配；每档催收时点+场景可配；版本管理与回滚。",
+      "dependencies": ["risk-001"],
+      "status": "not_started",
+      "verification": [
+        "默认配置：HIGH=7/15/30天，MEDIUM=30天，LOW=90天（对应 TC-RISK-05）",
+        "阈值边界值映射正确（对应 TC-RISK-03）",
+        "改阈值重算生效（对应 TC-RISK-04）",
+        "配置历史可查可回滚（对应 TC-RISK-06）"
+      ],
+      "evidence": [],
+      "notes": "后台配置界面。"
+    },
+    {
+      "id": "task-001",
+      "priority": 6,
+      "area": "task_engine",
+      "title": "催收任务生成（跑批核心逻辑）",
+      "description": "APScheduler 凌晨跑批；扫描未支付订单，命中催收时点且未支付→生成任务；幂等控制。",
+      "dependencies": ["risk-002"],
+      "status": "not_started",
+      "verification": [
+        "高风险多轮任务按时点生成（对应 TC-TASK-01）",
+        "未到时点不生成（对应 TC-TASK-02）",
+        "已支付订单不生成（对应 TC-TASK-03）",
+        "到时点但已支付跳过（对应 TC-TASK-04）",
+        "重复跑批幂等（对应 TC-TASK-05）",
+        "中/低风险时点正确（对应 TC-TASK-06/07/08）",
+        "支持手动触发跑批"
+      ],
+      "evidence": [],
+      "notes": "幂等关键：batch_id+order_id+day_offset 三元组唯一。"
+    },
+    {
+      "id": "task-002",
+      "priority": 7,
+      "area": "task_engine",
+      "title": "任务分配（高风险优先+负载均衡）",
+      "description": "按 HIGH>MEDIUM>LOW 优先级 + 账龄倒序排序；3 名催收员负载均衡分配；任务状态机。",
+      "dependencies": ["task-001"],
+      "status": "not_started",
+      "verification": [
+        "高风险优先分配+负载均衡（对应 TC-TASK-09）",
+        "负载不均时补齐（对应 TC-TASK-10）",
+        "状态机流转正确（对应 TC-TASK-11）",
+        "承诺还款改期（对应 TC-TASK-12）",
+        "跑批 batch_id 唯一（对应 TC-TASK-13）"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "wb-001",
+      "priority": 8,
+      "area": "workbench",
+      "title": "催收工作台前端",
+      "description": "催收员待办列表（按风险/账龄排序）、任务详情、用户特征画像、处理结果回填、领取/释放。",
+      "dependencies": ["task-002", "infra-002"],
+      "status": "not_started",
+      "verification": [
+        "催收员只见自己任务（对应 TC-WB-01）",
+        "列表按风险+账龄排序（对应 TC-WB-02）",
+        "并发领取防重（对应 TC-WB-03）",
+        "结果回填成功（对应 TC-WB-04）",
+        "异议处理升级（对应 TC-WB-05）",
+        "权限控制生效（对应 TC-WB-06）"
+      ],
+      "evidence": [],
+      "notes": "React + Ant Design。"
+    },
+    {
+      "id": "talk-001",
+      "priority": 9,
+      "area": "talk_engine",
+      "title": "话术模板引擎（匹配+变量填充）",
+      "description": "talk_templates 表；按 [风险档×账龄段×场景×用户特征] 匹配；ANY 兜底；变量占位符填充。",
+      "dependencies": ["task-002"],
+      "status": "not_started",
+      "verification": [
+        "精确命中模板（对应 TC-TALK-01）",
+        "ANY 回退匹配（对应 TC-TALK-02）",
+        "变量占位符填充无残留（对应 TC-TALK-03）",
+        "账龄段映射正确（对应 TC-TALK-04）"
+      ],
+      "evidence": [],
+      "notes": "模板管理界面。"
+    },
+    {
+      "id": "talk-002",
+      "priority": 10,
+      "area": "talk_engine",
+      "title": "AI 智能话术生成（LLM Provider + 降级）",
+      "description": "LLMProvider 抽象（Claude/OpenAI/Mock）；AI 生成话术；开关控制；失败降级模板；反馈记录。",
+      "dependencies": ["talk-001"],
+      "status": "not_started",
+      "verification": [
+        "mock LLM 生成非空话术（对应 TC-TALK-05）",
+        "真实 LLM 生成合规话术（对应 TC-TALK-06，需 key）",
+        "关闭开关仅返模板（对应 TC-TALK-07）",
+        "LLM 失败降级模板（对应 TC-TALK-08）",
+        "反馈记录（对应 TC-TALK-09）",
+        "话术无违规内容（对应 TC-TALK-10）"
+      ],
+      "evidence": [],
+      "notes": "MVP 可用 mock LLM，预留真实 Provider。"
+    },
+    {
+      "id": "dash-001",
+      "priority": 11,
+      "area": "dashboard",
+      "title": "数据大盘（日/周/月核心指标）",
+      "description": "日大盘（新增任务数、各档分布、回款数、回款率）；周/月趋势；风险/账龄分布。",
+      "dependencies": ["task-002"],
+      "status": "not_started",
+      "verification": [
+        "日大盘指标与库统计一致（对应 TC-DASH-01）",
+        "风险档分布统计正确（对应 TC-DASH-02）",
+        "周大盘趋势返回（对应 TC-DASH-03）"
+      ],
+      "evidence": [],
+      "notes": "ECharts 可视化。MVP 先放核心指标。"
+    },
+    {
+      "id": "e2e-001",
+      "priority": 12,
+      "area": "e2e",
+      "title": "端到端完整闭环验证",
+      "description": "上传→算风险→跑批→分配→催收→话术→回填→大盘 全流程贯通。",
+      "dependencies": ["wb-001", "talk-002", "dash-001"],
+      "status": "not_started",
+      "verification": [
+        "TC-E2E-01 完整催收闭环通过",
+        "TC-E2E-02 高风险多轮催收闭环通过",
+        "TC-E2E-03 已支付订单全程不催收通过"
+      ],
+      "evidence": [],
+      "notes": "MVP 验收的最后关卡。"
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+# ── Python ──────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+sdist/
+wheels/
+*.whl
+
+# ── 虚拟环境 ─────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Node / 前端 ─────────────────────────
+node_modules/
+frontend/dist/
+frontend/build/
+*.tsbuildinfo
+.npm
+.pnpm-store/
+
+# ── 测试 / 覆盖率 ───────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+coverage/
+
+# ── 数据库 ──────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+instance/
+
+# ── 环境变量 / 密钥 ─────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# ── IDE / 编辑器 ───────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── 日志 / 运行时 ───────────────────────
+*.log
+logs/
+runs/
+
+# ── Alembic ─────────────────────────────
+backend/alembic/versions/__pycache__/
+
+# ── 临时文件 ────────────────────────────
+*.tmp
+*.bak
+e:/tmp/
