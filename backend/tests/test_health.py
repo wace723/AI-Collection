@@ -12,3 +12,10 @@ def test_health_payload(client):
     assert body["status"] == "ok"
     assert "app" in body
     assert "version" in body
+
+
+def test_api_health_returns_200(client):
+    """带 /api 前缀的健康检查（前端经 vite proxy 访问）。"""
+    r = client.get("/api/health")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
