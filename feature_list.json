@@ -20,15 +20,20 @@
       "title": "项目骨架与运行环境",
       "description": "搭建 backend(FastAPI) + frontend(React/Vite) 骨架，docker-compose，数据库连接，init.sh 可跑通。",
       "dependencies": [],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "./init.sh 通过，依赖安装成功",
         "后端 uvicorn 启动成功，/health 返回 200",
         "前端 npm run dev 启动成功",
         "数据库迁移 alembic upgrade head 成功"
       ],
-      "evidence": [],
-      "notes": "MVP 用 SQLite 起步，预留 PostgreSQL 切换。"
+      "evidence": [
+        "./init.sh 全流程退出码 0：venv 创建、pip install、alembic upgrade head、pytest 2 passed、npm install、npm run build 成功",
+        "后端：cd backend && uvicorn app.main:app --reload → curl http://127.0.0.1:8123/health → 200 {\"status\":\"ok\",\"app\":\"平台使用费催收系统\",\"version\":\"0.1.0\"}",
+        "前端：cd frontend && npm run dev → Vite v8.2.2 ready，HTTP 200",
+        "迁移：alembic upgrade head → Running upgrade -> 0baedee4c6c7, init schema；dev.db 含 9 张业务表(orders/order_features/risk_configs/collection_schedules/tasks/task_results/users/talk_templates/ai_conversations)+alembic_version"
+      ],
+      "notes": "MVP 用 SQLite 起步，预留 PostgreSQL 切换。docker-compose 交付未验证(本地无 Docker)。Vite 实装 v8.2.2(非预期 v5，但全功能可用)。"
     },
     {
       "id": "infra-002",

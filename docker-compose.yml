@@ -1,0 +1,38 @@
+# 生产/集成环境编排。本地开发用 SQLite + uvicorn --reload，无需 docker。
+# 验证：docker compose up --build（需先安装 Docker）
+# postgres 仅在 --profile pg 时启用，backend 默认用 SQLite 也可工作。
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    profiles: ["pg"]
+    environment:
+      POSTGRES_DB: collection
+      POSTGRES_USER: collection
+      POSTGRES_PASSWORD: collection_dev_pwd
+    ports: ["5432:5432"]
+    volumes: ["pg_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U collection"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg://collection:collection_dev_pwd@postgres:5432/collection
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports: ["8000:8000"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  frontend:
+    build: ./frontend
+    ports: ["5173:80"]
+    depends_on: [backend]
+
+volumes:
+  pg_data:
