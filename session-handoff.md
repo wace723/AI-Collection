@@ -5,67 +5,63 @@
 
 ## 当前已验证
 
-- 现在明确可用的部分：infra-001 骨架、infra-002 鉴权、data-001 CSV 上传解析、risk-001 Mock 风险计算、risk-002 风险档配置、**task-001 催收任务生成（跑批+幂等+定时调度）**
-- 这轮实际跑过的验证（Session 007 / CodeBuddy）：
-  - 后端 pytest 全量 **74 passed**（3 health + 9 auth + 9 data + 16 risk + 17 risk_config + 20 task_generation）
-  - alembic 增量迁移 `c4a2b9d1e0f1` 应用成功：tasks 唯一约束 `uq_tasks_batch_order_day`（batch_id+order_id+day_offset）生效
-  - 端到端真实数据：dev.db 20 条未支付订单跑批 → 30 任务（HIGH 15/MEDIUM 12/LOW 3，batch=2026-09-09）；同日重跑 → generated=0 / idempotent_skipped=30
+- 现在明确可用的部分：infra-001 骨架、infra-002 鉴权、data-001 CSV 上传解析、risk-001 Mock 风险计算、risk-002 风险档配置、task-001 催收任务生成、**task-002 任务分配 + 状态机**
+- 这轮实际跑过的验证（Session 008 / CodeBuddy）：
+  - 后端 pytest 全量 **87 passed**（…+ 13 task_assignment）
+  - 端到端真实数据：dev.db 30 条 PENDING_ASSIGN → 分给 collector1/2/3 各 10 个（负载均衡差=0）
+  - 状态机 API：claim（PENDING→IN_PROGRESS）、result（DONE 终态 / PROMISE 改期回 PENDING），终态 409 保护，TaskResult 明细写入
   - 前端 npm run build 通过（无改动，回归确认）
 
-## 本轮改动（task-001 + 双工具 harness）
+## 本轮改动（task-002）
 
 - 后端新增/变更：
-  - `services/task_engine/batch.py`（新）：`generate_tasks` 核心逻辑 + `run_batch`（recalc_risk 编排）+ `BatchResult` + `BatchNotReadyError`
-  - `services/task_engine/__init__.py`：导出 generate_tasks/run_batch/BatchResult
-  - `scheduler/`（新）：`jobs.py` run_daily_batch_job + build_scheduler（cron `0 0 * * *`，settings.BATCH_RUN_CRON 可配）
-  - `api/tasks.py`（新）：POST `/api/tasks/batch/run`（ADMIN，`?recalc=true`）、GET `/api/tasks/batch/status/{batch_id}`（登录）
-  - `schemas/task.py`（新）：BatchRunOut/BatchStatusOut
-  - `models/task.py`：加复合唯一约束；`main.py`：lifespan 启动/关闭 APScheduler；`core/config.py`：BATCH_RUN_CRON；`requirements.txt`：APScheduler==3.10.4
-- 新增 harness：`CODEBUDDY.md`（CodeBuddy 路由层，与 CLAUDE.md 平行、共享状态文件）
-- 测试 `tests/test_task_generation.py` 20 用例
+  - `services/task_engine/assignment.py`（新）：`assign_pending_tasks`（风险档排序 + 账龄倒序 + 当前最低负载者轮询）+ `AssignmentResult`
+  - `services/task_engine/state.py`（新）：`claim_task` / `submit_result`（PENDING→IN_PROGRESS→DONE/PROMISE 改期）+ `TaskNotFoundError`/`TaskStateError` + 终态保护 + 权限校验
+  - `api/tasks.py`：追加 POST `/api/tasks/assign/run`（ADMIN）、POST `/api/tasks/{id}/claim`、POST `/api/tasks/{id}/result`
+  - `schemas/task.py`：`AssignmentRunOut`/`TaskOut`/`TaskResultIn`
+  - `scheduler/jobs.py`：每日 job = generate + assign 完整跑批
+- 测试 `tests/test_task_assignment.py` 13 用例（含覆盖 `seed_users` 建 3 名催收员的 fixture）
 
 ## 仍损坏或未验证
 
 - 已知缺陷：无
-- 未验证路径：task-002 及之后功能均 not_started
+- 未验证路径：wb-001 及之后功能均 not_started
 - 下一轮会话需要注意的风险：
-  - SQLite BigInteger 自增问题已修复，勿重新引入裸 `BigInteger()` 主键（沿用记录）
-  - 测试内存 SQLite 必须用 StaticPool（沿用记录）
-  - vite 监听 IPv6，前端访问用 `localhost` 不是 `127.0.0.1`（沿用记录）
+  - SQLite BigInteger 自增 / StaticPool / vite IPv6 localhost（沿用记录）
   - 后端默认端口 8000
-  - **APScheduler 3.10.4** 在 Python 3.13 可用（已验证 import + lifespan 启动路径）；真实 0 点触发行为待长期运行观察
-  - scheduler job 异常 logger.exception 后抛出由 APScheduler 捕获（失败可观察）
-  - run_batch recalc=True 会对整库订单重算风险（复用 risk-001 编排器，幂等无害）；无特征订单 mock=50 → MEDIUM
-  - 幂等语义：业务去重键是 `(order_id, day_offset)` 且排除 CANCELLED（跨日补跑不重复）；DB 约束仍是 batch+order+offset 三元组
-  - 坑点：config_service 变更后需 `db.expire_all()`（沿用 Session 006 记录）
-  - dev.db 现含 30 条本地演示任务（2026-09-09 batch），属本地数据不影响仓库
+  - 分配负载统计 = 催收员 PENDING + IN_PROGRESS 任务数（PROMISE 改期回 PENDING 的也算待处理，已计入）
+  - 状态机 `talk_used` 仅写 TaskResult 明细，Task 模型无该字段（符合设计）
+  - 主管手动改派（F-TASK-04 P1）未实现，task-002 仅系统自动分配
+  - dev.db 现含 30 条已分配任务（collector1/2/3 各 10，PENDING），属本地数据不影响仓库
 
 ## 下一步最佳动作
 
-- 最高优先级未完成功能：`task-002` 任务分配（将 PENDING_ASSIGN 任务分给 3 名催收员）
-- 为什么它是下一步：task-001 已生成 30 条真实任务（PENDING_ASSIGN），task-002 在此基础上实现分配闭环，之后 wb-001 工作台才有数据可看
-- 什么结果才算 passing（对应 docs/03 TC-TASK-09~12 与 docs/02 §4.3）：
-  - 未分配任务批量分配给催收员（对应 TC-TASK-09）
-  - 分配后任务 status PENDING（对应 TC-TASK-10）
-  - 已分配/已处理任务不重复分配（对应 TC-TASK-11）
-  - 全部任务都有 assignee（对应 TC-TASK-12，含按规则轮询/负载均衡）
-  - 支持手动触发分配
+- 最高优先级未完成功能：`wb-001` 催收工作台（任务列表 / 详情 / 领取 / 回填 前端 UI）
+- 为什么它是下一步：task-002 后端分配与状态机已就绪，催收员需要前端界面查看分配给自己的任务并执行催收；这是闭环里第一个面向催收员视角的功能
+- 什么结果才算 passing（对应 docs/03 TC-WB-01~05）：
+  - 催收员登录看到分配给自己的任务（TC-WB-01）
+  - 任务列表按风险与账龄排序（TC-WB-02）
+  - 任务详情展示订单信息 + 用户特征 + 推荐话术占位（TC-WB-03，话术 talk-001 后补真实）
+  - 领取任务（claim）后状态变 IN_PROGRESS（TC-WB-04）
+  - 回填结果（PAID/PROMISE/...）后状态正确流转（TC-WB-05）
 - 这一步中哪些东西不要动：
   - docs/ 下需求架构（已是基线）
-  - `generate_tasks`/`run_batch`/BatchResult 契约（task-001 已落地）
-  - `Task` 模型 status 枚举与 batch 幂等约束
+  - task_engine 的 generate_tasks/assign_pending_tasks/claim_task/submit_result 契约（task-001/002 已落地）
+  - Task 模型与状态机枚举
   - RiskProvider/config_service 等 risk 部分
   - CLAUDE.md / CODEBUDDY.md 的设计约束
 
-## task-002 实现要点（给新会话的提示）
+## wb-001 实现要点（给新会话的提示）
 
-- 复用：`Task`（status=PENDING_ASSIGN/batch_id）、`User`（role=COLLECTOR 3 名）、`APIResponse[T]`、`require_role`
-- 新建（建议）：
-  - `services/task_engine/assignment.py`：`assign_pending_tasks`（规则：按轮询 round-robin 或按现有负载最少的催收员；从 db 取 PENDING_ASSIGN → 分配 → status=PENDING + assignee_id + assigned_at）
-  - `api/tasks.py`：追加 POST `/api/tasks/assign/run`（ADMIN）或并入 batch/run 编排
-- 核心语义（docs/02 §4.3）：已分配/已完成不重复分配；每名催收员负载均衡
-- 参考 docs/02 §4.3、docs/03 TC-TASK-09~12/14
-- 分配后 run_batch 的幂等跳过逻辑（(order_id, day_offset) 非 CANCELLED）不会影响已分配任务——task-002 需注意不能重复生成已分配任务对应时点
+- 后端可能需补（task-002 未做列表/详情查询）：
+  - GET `/api/tasks?assignee=&status=&page=&size=`（按风险+账龄排序，催收员只看自己的）
+  - GET `/api/tasks/{id}`（订单信息 + 特征 + 任务状态）
+- 复用：`TaskOut`（task-002 已建）、`claim_task`/`submit_result`、`require_role("COLLECTOR")`、`get_current_user`
+- 前端：
+  - `pages/Workbench/`（新）：待办列表 + 详情抽屉 + 领取/回填表单
+  - `api/tasks.ts`：list/get/claim/submitResult
+  - 路由守卫已就绪（infra-002）
+- 参考 docs/02 §5.4 任务 API、docs/03 TC-WB-01~05
 
 ## 命令
 
@@ -81,3 +77,6 @@
   - 风险配置：`GET/PUT /api/config/risk/current`、`POST /api/config/risk/rollback/{version}`
   - 手动跑批：`POST /api/tasks/batch/run?recalc=true`（ADMIN）
   - 批次状态：`GET /api/tasks/batch/status/{batch_id}`（登录）
+  - 手动分配：`POST /api/tasks/assign/run`（ADMIN）
+  - 领取任务：`POST /api/tasks/{id}/claim`（COLLECTOR/SUPERVISOR/ADMIN）
+  - 回填结果：`POST /api/tasks/{id}/result`（同上）

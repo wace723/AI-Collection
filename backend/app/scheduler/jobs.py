@@ -28,12 +28,14 @@ def run_daily_batch_job() -> dict[str, Any]:
     由 APScheduler 捕获（避免后台线程静默失败）。
     """
     from app.core.database import SessionLocal
-    from app.services.task_engine import run_batch
+    from app.services.task_engine import assign_pending_tasks, run_batch
 
     db = SessionLocal()
     try:
         today = date.today()
+        # 完整跑批：风险重算 → 任务生成 → 任务分配（docs/02 §4.2.1 第 2~5 步）
         result = run_batch(db, today=today, recalc_risk=True)
+        assignment = assign_pending_tasks(db)
         payload = {
             "batch_id": result.batch_id,
             "today": result.today.isoformat(),
@@ -41,8 +43,16 @@ def run_daily_batch_job() -> dict[str, Any]:
             "generated": result.generated,
             "idempotent_skipped": result.idempotent_skipped,
             "by_tier": result.by_tier,
+            "assigned": assignment.assigned,
+            "assignment_skipped": assignment.skipped,
+            "by_assignee": assignment.by_assignee,
         }
-        logger.info("每日跑批完成 batch_id=%s generated=%s", result.batch_id, result.generated)
+        logger.info(
+            "每日跑批完成 batch_id=%s generated=%s assigned=%s",
+            result.batch_id,
+            result.generated,
+            assignment.assigned,
+        )
         return payload
     except Exception:
         logger.exception("每日跑批失败")

@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`（骨架就绪后）
-- 当前最高优先级未完成功能：`task-002` 任务分配（PENDING_ASSIGN → 轮询分给 3 名催收员）（task-001 已 passing）
-- 当前 blocker：无（task-001 已 passing，跑批生成+幂等+定时调度可用；risk-002 配置可用）
+- 当前最高优先级未完成功能：`wb-001` 催收工作台（任务列表/详情/结果回填 UI）
+- 当前 blocker：无（task-002 已 passing，跑批生成+分配+状态机可用；前端工作台待做）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -206,3 +206,30 @@
   - run_batch recalc 对无特征订单 mock=50 → MEDIUM（确定性可预期）
   - dev.db 现含 30 条本地演示任务（2026-09-09 batch），属本地数据，不影响仓库
 - 下一步最佳动作：开始 `task-002` 任务分配（PENDING_ASSIGN → 规则/轮询分给 3 名催收员），依赖 task-001 已 passing
+
+### Session 008（CodeBuddy）
+
+- 日期：2026-09-09
+- 本轮目标：完成 `task-002` 任务分配（高风险优先 + 负载均衡）+ 状态机
+- 已完成：
+  - `services/task_engine/assignment.py`（新）：`assign_pending_tasks`（风险档排序 HIGH>MEDIUM>LOW + 账龄倒序 + 当前最低负载者轮询，tie 取最小 id）+ `AssignmentResult`
+  - `services/task_engine/state.py`（新）：`claim_task`（PENDING→IN_PROGRESS）+ `submit_result`（IN_PROGRESS→DONE 终态 / PROMISE→PENDING 改期）+ 写 `TaskResult` 明细 + 终态保护 + 权限校验（COLLECTOR 仅自己的）
+  - `services/task_engine/__init__.py`：导出 assign/claim/submit_result 等
+  - `api/tasks.py`：追加 POST `/api/tasks/assign/run`（ADMIN）、POST `/api/tasks/{id}/claim`、POST `/api/tasks/{id}/result`
+  - `schemas/task.py`：追加 `AssignmentRunOut`/`TaskOut`/`TaskResultIn`
+  - `scheduler/jobs.py`：每日 job 改为 generate + assign 完整跑批（docs §4.2.1 第 2~5 步）
+  - 测试 `tests/test_task_assignment.py` 13 用例（覆盖 seed_users 覆盖 fixture 建 3 名催收员）
+- 运行过的验证：
+  - `pytest tests/test_task_assignment.py -q` → 13 passed
+  - `pytest -q` 全量 → 87 passed（74 旧 + 13 新，无回归）
+  - 端到端真实数据：dev.db 30 条 PENDING_ASSIGN → 分给 collector1/2/3 各 10 个，负载均衡差=0
+  - `npm run build` → ✓
+- 已记录证据：见 feature_list.json task-002.evidence
+- 提交记录：`feat: task-002 task assignment + state machine (load balance + claim/result)`
+- 更新过的文件或工件：services/task_engine/assignment.py（新）、state.py（新）、__init__.py、api/tasks.py、schemas/task.py、scheduler/jobs.py、tests/test_task_assignment.py（新）、feature_list.json、claude-progress.md、session-handoff.md
+- 已知风险或未解决问题：
+  - 分配负载只统计 PENDING+IN_PROGRESS（不含 PROMISE 改期后回 PENDING 的任务，它们也算待处理——已计入 PENDING，OK）
+  - 状态机 result 的 talk_used 仅写入 TaskResult 明细，Task 本身无 talk_used 字段（符合模型）
+  - 主管手动改派（F-TASK-04 P1）尚未实现，task-002 只做系统自动分配
+  - 前端工作台 UI（wb-001）尚未做，claim/result 当前只能 API 调用
+- 下一步最佳动作：开始 `wb-001` 催收工作台（任务列表/详情/领取/回填前端 UI），依赖 task-002 后端已 passing

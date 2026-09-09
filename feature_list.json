@@ -176,7 +176,7 @@
       "title": "任务分配（高风险优先+负载均衡）",
       "description": "按 HIGH>MEDIUM>LOW 优先级 + 账龄倒序排序；3 名催收员负载均衡分配；任务状态机。",
       "dependencies": ["task-001"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "高风险优先分配+负载均衡（对应 TC-TASK-09）",
         "负载不均时补齐（对应 TC-TASK-10）",
@@ -184,8 +184,15 @@
         "承诺还款改期（对应 TC-TASK-12）",
         "跑批 batch_id 唯一（对应 TC-TASK-13）"
       ],
-      "evidence": [],
-      "notes": ""
+      "evidence": [
+        "pytest tests/test_task_assignment.py -q → 13 passed（TC-TASK-09/10/11/12 + 幂等不重复分配 + 权限边界 401/403/404/409 + 无催收员 skipped）",
+        "pytest -q 全量 → 87 passed（74 旧 + 13 新，无回归）",
+        "真实数据 E2E：dev.db 30 条 PENDING_ASSIGN 任务分配 → collector1/2/3 各 10 个，负载均衡差=0",
+        "状态机 API：POST /api/tasks/{id}/claim（PENDING→IN_PROGRESS）、POST /api/tasks/{id}/result（IN_PROGRESS→DONE/PROMISE 改期）；终态 DONE 不可再操作（409）；TaskResult 明细写入",
+        "scheduler 每日 job 现为 generate+assign 完整跑批（docs §4.2.1 第 2~5 步）",
+        "前端 npm run build ✓（无改动，回归确认）"
+      ],
+      "notes": "分配算法：风险档 HIGH>MEDIUM>LOW + 账龄倒序(due_date 升序) + 当前最低负载者轮询(tie 取最小 id)；负载=催收员 PENDING+IN_PROGRESS 任务数。状态机 claim(PENDING→IN_PROGRESS) result(IN_PROGRESS→DONE 或 PROMISE→PENDING 改期)；终态 DONE/CANCELLED 不可再变更。TC-TASK-13(batch_id 唯一) 由 task-001 覆盖。"
     },
     {
       "id": "wb-001",
