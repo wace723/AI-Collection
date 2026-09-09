@@ -95,14 +95,24 @@
       "title": "Mock 风险概率计算 + RiskProvider 抽象",
       "description": "实现 RiskProvider 抽象接口 + MockRiskProvider（基于历史缴费历时等加权），返回 0~100，可批量触发。",
       "dependencies": ["data-001"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "触发重算后每笔订单 risk_prob ∈ [0,100]（对应 TC-RISK-01）",
         "risk_tier 按 active 配置映射（对应 TC-RISK-02）",
         "Provider 接口可切换 mock→algorithm 不改调用方"
       ],
-      "evidence": [],
-      "notes": "mock 应覆盖高/中/低三档分布，便于测试任务调度。"
+      "evidence": [
+        "pytest 37 passed（3 health + 9 auth + 9 data + 16 risk）",
+        "TC-RISK-01：test_recalc_all_orders_prob_in_range 全过——触发重算后每笔 risk_prob∈[0,100]、risk_tier 非空、三档有分布、无 NULL 概率",
+        "TC-RISK-02/03：test_map_tier_boundaries_default / test_map_tier_edge_values 全过——边界值精确断言 70→HIGH, 69.99→MEDIUM, 30→MEDIUM, 29.99→LOW, 0→LOW, 100→HIGH",
+        "Provider 可切换：test_provider_switchable_via_injection 验证注入任意 Provider 不改调用方；test_algorithm_provider_not_implemented 验证占位类",
+        "确定性：test_mock_provider_deterministic 相同输入相同输出",
+        "防泄漏：test_mock_provider_ignores_label_fields 改变 label_30/actual_pay_duration 不影响概率（mock 不用标签字段）",
+        "权限：test_recalc_requires_admin（COLLECTOR 403）、test_recalc_requires_auth（未登录 401）、test_recalc_empty_orders（空库不报错）",
+        "端到端真实联调：示例 CSV 20 条入库 → POST /api/data/orders/recalc-risk → recalculated=20，三档分布 HIGH=5/MEDIUM=12/LOW=3，0 NULL，概率范围 18.75~85.83 全 ∈[0,100]",
+        "init.sh 全流程退出码 0：alembic upgrade head + pytest 37 passed + npm run build ✓"
+      ],
+      "notes": "MockRiskProvider 确定性加权（5 维：历史缴费平均历时 0.35 + 历史平台使用费订单数 0.25 + 历史中标率 0.20 + 近90天活跃度 0.15 + 非会员 0.05），刻意不用 label_30/90/180/365 与 actual_pay_duration_days（防数据泄漏）。tier_mapper 优先读 risk_configs active 配置，无则回退默认 70/30。risk-002 才做配置 CRUD，risk-001 用默认阈值或读 active 配置表即可。Provider 切换经 settings.RISK_PROVIDER 或注入，调用方代码不变。"
     },
     {
       "id": "risk-002",

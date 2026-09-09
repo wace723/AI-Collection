@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`（骨架就绪后）
-- 当前最高优先级未完成功能：`risk-001` Mock 风险概率计算 + RiskProvider 抽象（data-001 已 passing）
-- 当前 blocker：无（data-001 已 passing，CSV 上传解析可用）
+- 当前最高优先级未完成功能：`risk-002` 风险档配置（阈值+催收时点，版本化）（risk-001 已 passing）
+- 当前 blocker：无（risk-001 已 passing，Mock 风险概率计算 + RiskProvider 抽象可用）
 
 ## 已完成的基础工件
 
@@ -120,3 +120,28 @@
   - 真实 CSV 河南曼之达：实际支付时长=空(NULL)、历史缴费平均历时=90、历史平台使用费订单数=1（与测试构造数据 CSV_ROW_OVERDUE 不同，均符合逻辑）。
   - 前端 chunk 超 500kB 警告（antd 整包），沿用 infra-001 记录，后续按需 code-split。
 - 下一步最佳动作：开始 `risk-001` Mock 风险概率计算 + RiskProvider 抽象（依赖 data-001 已就绪）
+
+### Session 005
+
+- 日期：2026-09-09
+- 本轮目标：完成 `risk-001` Mock 风险概率计算 + RiskProvider 抽象
+- 已完成：
+  - `services/risk_engine/provider.py`：RiskProvider 抽象 + MockRiskProvider（5 维确定性加权）+ AlgorithmRiskProvider 占位
+  - `services/risk_engine/tier_mapper.py`：Thresholds + get_active_thresholds（读 active 配置，无则回退 70/30）+ map_tier 纯函数
+  - `services/risk_engine/calculator.py`：recalculate_risks 编排器（拉订单+特征→算概率→映射→回写）+ get_risk_provider 工厂（按 settings.RISK_PROVIDER 注入）
+  - `services/risk_engine/__init__.py`：稳定对外入口
+  - `schemas/risk.py`：RecalcRiskSummary + RiskTierOut
+  - `core/config.py`：加 RISK_PROVIDER 开关（mock | algorithm）
+  - `api/data.py`：挂载 POST /api/data/orders/recalc-risk（ADMIN），恢复误删的 get_order 函数体
+  - 测试 `tests/test_risk.py` 16 用例（TC-RISK-01/02/03 + Provider 可切换 + 确定性 + 防泄漏 + 权限）
+- 运行过的验证：
+  - `pytest tests/test_risk.py -q` → 16 passed
+  - `./init.sh` → 退出码 0：pytest 37 passed（3 health + 9 auth + 9 data + 16 risk）+ npm run build ✓
+  - 端到端真实联调：示例 CSV 20 条入库 → POST /api/data/orders/recalc-risk → recalculated=20，三档分布 HIGH=5/MEDIUM=12/LOW=3，0 NULL，概率范围 18.75~85.83 全 ∈[0,100]
+- 已记录证据：见 feature_list.json risk-001.evidence
+- 已知风险或未解决问题：
+  - `del skipped` 在 calculator.py 中是占位（当前无跳过逻辑），保留字段供后续扩展，无害
+  - AlgorithmRiskProvider 为占位（调用抛 NotImplementedError），上线真实算法时实现
+  - mock 公式刻意不用 label_30/90/180/365 与 actual_pay_duration_days（防数据泄漏），上线真实算法前需做时间切割（沿用 docs/02 记录）
+  - risk_configs 表尚无种子数据（tier_mapper 读不到 active 配置时回退默认 70/30），risk-002 做配置 CRUD + 默认种子
+- 下一步最佳动作：开始 `risk-002` 风险档配置（阈值+催收时点，版本化），为 task-001 跑批提供配置基础

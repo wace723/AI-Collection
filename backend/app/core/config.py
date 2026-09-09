@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     LLM_API_KEY: str | None = None
     AI_TALK_ENABLED: bool = False
 
+    # 风险计算 Provider（risk-001 实现，mock → algorithm 可切换）
+    RISK_PROVIDER: str = "mock"  # mock | algorithm
+
     model_config = SettingsConfigDict(
         env_file=str(BACKEND_DIR / ".env"),
         env_file_encoding="utf-8",

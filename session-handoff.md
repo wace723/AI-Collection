@@ -4,61 +4,72 @@
 
 ## 当前已验证
 
-- 现在明确可用的部分：infra-001 骨架、infra-002 鉴权、**data-001 CSV 上传与解析（37 列特征入库）**
+- 现在明确可用的部分：infra-001 骨架、infra-002 鉴权、data-001 CSV 上传与解析（37 列特征入库）、**risk-001 Mock 风险概率计算 + RiskProvider 抽象**
 - 这轮实际跑过的验证：
-  - 后端 pytest 21 passed（3 health + 9 auth + 9 data）
-  - 端到端真实联调：GBK 示例 CSV 上传 20 条入库、空值 NULL、重复去重、中文无乱码
-  - 前端联调：经 vite proxy 5173 上传 20 条入库、列表 total=20
+  - 后端 pytest 37 passed（3 health + 9 auth + 9 data + 16 risk）
+  - 端到端真实联调：示例 CSV 20 条入库 → POST /api/data/orders/recalc-risk → 20 笔全部回写 risk_prob/risk_tier，三档分布 HIGH=5/MEDIUM=12/LOW=3，0 NULL，概率范围 18.75~85.83
   - init.sh 退出码 0
 
-## 本轮改动（data-001）
+## 本轮改动（risk-001）
 
 - 新增了哪些代码或行为：
-  - 后端 services/data_ingestion/：columns.py（37 列映射常量）、encoding.py（GBK/UTF-8 自动探测）、parser.py（解析+去重入库）
-  - 后端 schemas/data.py、api/data.py（POST /api/data/upload + GET /orders + GET /orders/{id}）、router 挂载 /data
-  - 测试 tests/test_data_upload.py 9 用例（TC-DATA-01~07 + 权限 403/401）
-  - 前端 types/api.ts 加 UploadSummary/Order/OrderList、api/data.ts、Config 页 CSV 拖拽上传 UI（ADMIN 校验）
+  - 后端 `services/risk_engine/provider.py`：RiskProvider 抽象 + MockRiskProvider（5 维确定性加权：历史缴费平均历时 0.35 + 历史平台使用费订单数 0.25 + 历史中标率 0.20 + 近90天活跃度 0.15 + 非会员 0.05）+ AlgorithmRiskProvider 占位
+  - 后端 `services/risk_engine/tier_mapper.py`：Thresholds + get_active_thresholds（读 active 配置，无则回退默认 70/30）+ map_tier 纯函数（≥即归档）
+  - 后端 `services/risk_engine/calculator.py`：recalculate_risks 编排器（拉订单+特征→算概率→映射→回写 Order.risk_prob/risk_tier/risk_calc_time）+ get_risk_provider 工厂（按 settings.RISK_PROVIDER 注入，可切 mock→algorithm）
+  - 后端 `services/risk_engine/__init__.py`：稳定对外入口
+  - 后端 `schemas/risk.py`：RecalcRiskSummary + RiskTierOut
+  - 后端 `core/config.py`：加 `RISK_PROVIDER` 开关（mock | algorithm）
+  - 后端 `api/data.py`：挂载 `POST /api/data/orders/recalc-risk`（ADMIN 权限）
+  - 测试 `tests/test_risk.py` 16 用例
 - 基础设施或 harness 发生了哪些变化：
-  - **修复 infra-001 遗留缺陷**：SQLite 下 BigInteger 主键/FK 不自增。orders/tasks/task_results/order_features 4 表的 BigInteger 改用 `BigInteger().with_variant(Integer, "sqlite")`（PostgreSQL 保持 BIGINT）。models/order.py、models/task.py、alembic/versions/0baedee4c6c7_init_schema.py 同步修正。
+  - 无表结构变更（Order 已有 risk_prob/risk_tier/risk_calc_time 字段，RiskConfig/CollectionSchedule 表 infra-001 已建好）
+  - risk_configs 表尚无种子数据（tier_mapper 读不到 active 配置时回退默认 70/30）
 
 ## 仍损坏或未验证
 
 - 已知缺陷：无
-- 未验证路径：risk-001 及之后功能均 not_started
+- 未验证路径：risk-002 及之后功能均 not_started
 - 下一轮会话需要注意的风险：
-  - SQLite BigInteger 自增问题已彻底修复，勿重新引入裸 `BigInteger()` 作主键
-  - 测试内存 SQLite 必须用 StaticPool（沿用 infra-002 记录）
+  - SQLite BigInteger 自增问题已彻底修复，勿重新引入裸 `BigInteger()` 作主键（沿用记录）
+  - 测试内存 SQLite 必须用 StaticPool（沿用记录）
   - vite 监听 IPv6，前端访问用 `localhost` 不是 `127.0.0.1`（沿用记录）
-  - 后端默认端口 8000（与 vite proxy target 对齐），之前 session 用过 8123，新会话统一用 8000
+  - 后端默认端口 8000（与 vite proxy target 对齐）
+  - AlgorithmRiskProvider 为占位，调用抛 NotImplementedError，上线真实算法时实现
+  - mock 公式刻意不用 label_30/90/180/365 与 actual_pay_duration_days（防数据泄漏）
 
 ## 下一步最佳动作
 
-- 最高优先级未完成功能：`risk-001` Mock 风险概率计算 + RiskProvider 抽象
-- 为什么它是下一步：data-001 已提供订单+特征数据，risk-001 在此基础上算欠费风险概率；risk-001 → task-001 是核心链路
+- 最高优先级未完成功能：`risk-002` 风险档配置（阈值+催收时点，版本化）
+- 为什么它是下一步：risk-001 已提供 MockRiskProvider + tier_mapper（读 active 配置回退默认阈值）；risk-002 补齐 risk_configs + collection_schedules 的 CRUD + 默认种子，为 task-001 跑批提供配置基础（催收时点表是任务生成的依据）
 - 什么结果才算 passing：
-  - RiskProvider 抽象接口 + MockRiskProvider（基于历史缴费历时等加权），返回 0~100
-  - 触发重算后每笔订单 risk_prob ∈ [0,100]，risk_tier 按 active 配置映射
-  - Provider 接口可切换 mock→algorithm 不改调用方
-  - 对应 TC-RISK-01/02 全过
+  - 默认配置：HIGH=7/15/30天，MEDIUM=30天，LOW=90天（对应 TC-RISK-05）
+  - 阈值边界值映射正确（对应 TC-RISK-03）
+  - 改阈值重算生效（对应 TC-RISK-04）
+  - 配置历史可查可回滚（对应 TC-RISK-06）
 - 这一步中哪些东西不要动：
   - docs/ 下需求架构（已是基线）
-  - Order/OrderFeature 模型字段与 CSV 列映射（data-001 已落地）
-  - CLAUDE.md 的设计约束（风险算法必须经 RiskProvider 抽象接口）
+  - RiskProvider 抽象 + MockRiskProvider 公式（risk-001 已落地，risk-002 只读配置不改算法）
+  - Order/OrderFeature 模型字段（data-001 已落地）
+  - CLAUDE.md 的设计约束
 
-## risk-001 实现要点（给新会话的提示）
+## risk-002 实现要点（给新会话的提示）
 
-- 复用：`Order`/`OrderFeature` 模型、`APIResponse[T]`、`require_role("ADMIN")`、`get_db`
-- 新建：`app/services/risk_engine/provider.py`（RiskProvider 抽象 + MockRiskProvider）、`app/api/risk.py`（触发重算端点）、`app/schemas/risk.py`
-- RiskProvider 抽象接口：`calculate(order, feature) -> float`、`batch_calculate(...) -> ...`
-- MockRiskProvider 加权维度参考 docs/02：历史缴费历时、历史平台使用费订单数、活跃度、中标率等（mock 应覆盖高/中/低三档分布便于测试）
-- risk_tier 映射依赖 risk_configs active 配置（risk-002 才做配置 CRUD，risk-001 先用默认阈值或读 active 配置表）
-- 参考 docs/02-技术架构设计.md §风险引擎、docs/03-测试用例.md TC-RISK-01/02
+- 复用：`RiskConfig`/`CollectionSchedule` 模型（risk.py 已建好）、`Thresholds`/`get_active_thresholds`/`map_tier`（tier_mapper 已实现）、`APIResponse[T]`、`require_role("ADMIN")`、`get_db`
+- 新建：
+  - `app/api/config.py`（risk 配置 CRUD 路由，对应 docs/02 §5.3）
+  - `app/schemas/config.py`（配置读写 schema）
+  - `app/services/config/` 或直接在 risk_engine 下加 `config_service.py`（配置版本管理 + 默认种子）
+  - 默认种子：risk_configs v1 (high=70, medium=30, is_active=True) + collection_schedules（HIGH 7/15/30 FIRST/SECOND/THIRD、MEDIUM 30 FIRST、LOW 90 FIRST）
+  - 配置更新逻辑：生成新版本号 +1，旧版本 is_active=False，新版本 is_active=True（版本化回滚）
+- 验证：改阈值 → recalc-risk 验证档位变化（risk-001 的 recalc 端点已可触发重算）
+- 参考 docs/02 §3.2.3/§3.2.4、docs/03 TC-RISK-03~06
 
 ## 命令
 
 - 启动命令：`./init.sh`（骨架就绪后 `RUN_START_COMMAND=1 ./init.sh`）
 - 验证命令：后端 `cd backend && pytest -q`；前端 `cd frontend && npm run build`
-- 种子数据：`cd backend && source .venv/Scripts/activate && python seed.py`
+- 种子数据：`cd backend && source .venv/Scripts/activate && python seed.py`（当前仅用户，risk-002 应在此加 risk_config 默认种子）
 - 启动后端：`cd backend && uvicorn app.main:app --reload --port 8000`（用 localhost 访问）
 - 启动前端：`cd frontend && npm run dev`（5173，用 localhost 访问）
 - 默认账号：admin/supervisor/collector1-3，密码 admin123
+- 重算风险：登录 admin 后 `POST /api/data/orders/recalc-risk`（需先上传 CSV）

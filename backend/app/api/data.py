@@ -19,11 +19,13 @@ from app.schemas.data import (
     OrderOut,
     UploadSummary,
 )
+from app.schemas.risk import RecalcRiskSummary
 from app.services.data_ingestion.parser import (
     CSVParseError,
     EncodingError,
     upload_csv_bytes,
 )
+from app.services.risk_engine import recalculate_risks
 
 router = APIRouter()
 
@@ -93,6 +95,22 @@ def list_orders(
     return APIResponse(
         data=OrderListOut(items=items, total=total, page=page, limit=limit)
     )
+
+
+@router.post(
+    "/orders/recalc-risk", response_model=APIResponse[RecalcRiskSummary]
+)
+def recalc_risk(
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_role("ADMIN")),
+) -> APIResponse[RecalcRiskSummary]:
+    """批量重算风险概率与档位（仅 ADMIN）。
+
+    对全部订单调用当前 RiskProvider（默认 mock）算概率，
+    按 active 风险档配置映射 HIGH/MEDIUM/LOW，回写订单。
+    """
+    result = recalculate_risks(db)
+    return APIResponse(data=RecalcRiskSummary(**result.__dict__))
 
 
 @router.get("/orders/{order_id}", response_model=APIResponse[OrderDetailOut])
