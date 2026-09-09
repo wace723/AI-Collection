@@ -1,6 +1,6 @@
 {
   "project": "平台使用费 AI 辅助催收系统",
-  "last_updated": "2026-09-08",
+  "last_updated": "2026-09-09",
   "rules": {
     "single_active_feature": true,
     "passing_requires_evidence": true,
@@ -69,7 +69,7 @@
       "title": "CSV 上传与解析（GBK/UTF-8 自动识别）",
       "description": "支持 37 列 CSV 上传，自动识别 GBK/UTF-8，解析入库到 orders + order_features，列校验。",
       "dependencies": ["infra-001"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "上传 UTF-8 CSV → 20 条入库（对应 TC-DATA-01）",
         "上传 GBK CSV → 中文无乱码（对应 TC-DATA-02）",
@@ -78,8 +78,15 @@
         "空值字段存 NULL（对应 TC-DATA-05）",
         "空文件/非 CSV 返回 400（对应 TC-DATA-06/07）"
       ],
-      "evidence": [],
-      "notes": "用示例文件 平台使用费特征查询_2026_09_08.csv 作为测试数据。"
+      "evidence": [
+        "pytest 21 passed（3 health + 9 auth + 9 data）",
+        "TC-DATA-01~07 全过：test_upload_utf8_csv_success/gbk/missing_columns/duplicate_dedup/null_values/empty_file/non_csv",
+        "权限测试：test_upload_requires_admin（collector 403）、test_upload_requires_auth（无 token 401）",
+        "端到端真实联调（/e/tmp/verify_data_e2e.py 全过）：GBK 示例 CSV 上传 20 条入库、河南曼之达实际支付时长=None、avg_pay_duration=90.0、label_30=1、中文无乱码、重复上传 0 inserted/20 skipped",
+        "前端联调：经 vite proxy 5173 端口上传 20 条入库、列表 total=20；Config 页 CSV 拖拽上传 UI 构建通过",
+        "init.sh 全流程退出码 0：alembic upgrade head + pytest 21 passed + npm run build ✓"
+      ],
+      "notes": "用示例文件 平台使用费特征查询_2026_09_08.csv 作为测试数据。修复 infra-001 遗留缺陷：SQLite 下 BigInteger 主键/FK 不自增（orders/tasks/task_results/order_features），改用 BigInteger().with_variant(Integer,'sqlite')，PostgreSQL 保持 BIGINT；模型 + init 迁移脚本同步修正。"
     },
     {
       "id": "risk-001",

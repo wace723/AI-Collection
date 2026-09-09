@@ -2,11 +2,8 @@
 
 from fastapi import APIRouter
 
-from app.api import auth
+from app.api import auth, data
 
 api_router = APIRouter()
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
-
-# 各 feature 挂载点示例（后续实现）：
-# from app.api import data, config, tasks, talk, dashboard
-# api_router.include_router(data.router, prefix="/data", tags=["data"])
+api_router.include_router(data.router, prefix="/data", tags=["data"])

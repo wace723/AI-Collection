@@ -7,6 +7,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, CreatedAtMixin
 
+# SQLite 下 BIGINT 主键/FK 不会自增（只有 INTEGER PRIMARY KEY 是 rowid 别名），
+# variant 让 SQLite 退化为 INTEGER，PostgreSQL 保持 BIGINT。
+_PK_BIGINT = BigInteger().with_variant(Integer, "sqlite")
+_FK_BIGINT = BigInteger().with_variant(Integer, "sqlite")
+
 
 class Task(Base, CreatedAtMixin):
     """催收任务。
@@ -17,9 +22,9 @@ class Task(Base, CreatedAtMixin):
 
     __tablename__ = "tasks"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(_PK_BIGINT, primary_key=True, autoincrement=True)
     order_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("orders.id", ondelete="CASCADE"), index=True
+        _FK_BIGINT, ForeignKey("orders.id", ondelete="CASCADE"), index=True
     )
     service_fee_order_no: Mapped[str] = mapped_column(String(64), index=True)
     risk_tier: Mapped[str] = mapped_column(String(8), index=True)
@@ -44,9 +49,9 @@ class TaskResult(Base, CreatedAtMixin):
 
     __tablename__ = "task_results"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(_PK_BIGINT, primary_key=True, autoincrement=True)
     task_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("tasks.id", ondelete="CASCADE"), index=True
+        _FK_BIGINT, ForeignKey("tasks.id", ondelete="CASCADE"), index=True
     )
     collector_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("users.id"), index=True

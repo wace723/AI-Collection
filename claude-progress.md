@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`（骨架就绪后）
-- 当前最高优先级未完成功能：`data-001` CSV 上传与解析（高风险未支付订单数据是催收任务的来源）
-- 当前 blocker：无（infra-002 已 passing，鉴权可用）
+- 当前最高优先级未完成功能：`risk-001` Mock 风险概率计算 + RiskProvider 抽象（data-001 已 passing）
+- 当前 blocker：无（data-001 已 passing，CSV 上传解析可用）
 
 ## 已完成的基础工件
 
@@ -99,3 +99,24 @@
   - 测试内存 SQLite 需 StaticPool 共享连接，否则 TestClient 跨连接 no such table
   - bcrypt 哈希有 DeprecationWarning（utcnow），无害
 - 下一步最佳动作：开始 `data-001` CSV 上传与解析（37 列特征入库），这是催收任务数据来源
+
+### Session 004
+
+- 日期：2026-09-09
+- 本轮目标：完成 `data-001` CSV 上传与解析（37 列特征入库）
+- 已完成：
+  - 后端：services/data_ingestion/（columns.py 37 列映射常量 + encoding.py GBK/UTF-8 自动探测 + parser.py 解析入库去重）、schemas/data.py、api/data.py（POST /api/data/upload + GET /orders + GET /orders/{id}）、router 挂载
+  - 测试：test_data_upload.py 9 用例（TC-DATA-01~07 + 权限 403/401），pytest 21 passed
+  - 前端：types 加 UploadSummary/Order/OrderList、api/data.ts、Config 页 CSV 拖拽上传 UI（ADMIN 权限校验），npm run build 通过
+- 运行过的验证：
+  - `pytest -q` → 21 passed（3 health + 9 auth + 9 data）
+  - 端到端真实联调（/e/tmp/verify_data_e2e.py）：GBK 示例 CSV 上传 20 条入库、河南曼之达空值=NULL、重复上传 0/20 去重、中文无乱码
+  - 前端联调：经 vite proxy 5173 上传 20 条入库、列表 total=20
+  - `./init.sh` → 退出码 0
+- 已记录证据：见 feature_list.json data-001.evidence
+- 已知风险或未解决问题：
+  - **修复 infra-001 遗留缺陷**：SQLite 下 BigInteger 主键/FK 不自增（只有 INTEGER PRIMARY KEY 是 rowid 别名），orders/tasks/task_results/order_features 4 表受影响。改用 `BigInteger().with_variant(Integer, "sqlite")`，模型 + init 迁移脚本同步修正。PostgreSQL 保持 BIGINT 不受影响。data-001 入库因此前直接 NOT NULL 失败，已彻底修复。
+  - verify_data_e2e.py 中文字面量相等断言受 bash GBK 终端影响（`==` False 但 `in` True），改用 `in` 子串断言；API 返回的 UTF-8 数据本身正确。
+  - 真实 CSV 河南曼之达：实际支付时长=空(NULL)、历史缴费平均历时=90、历史平台使用费订单数=1（与测试构造数据 CSV_ROW_OVERDUE 不同，均符合逻辑）。
+  - 前端 chunk 超 500kB 警告（antd 整包），沿用 infra-001 记录，后续按需 code-split。
+- 下一步最佳动作：开始 `risk-001` Mock 风险概率计算 + RiskProvider 抽象（依赖 data-001 已就绪）

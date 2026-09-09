@@ -24,13 +24,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
 
+# SQLite 下 BIGINT 主键不会自增（只有 INTEGER PRIMARY KEY 是 rowid 别名），
+# 用 variant 让 SQLite 退化为 INTEGER 自增，PostgreSQL 保持 BIGINT。
+_PK_BIGINT = BigInteger().with_variant(Integer, "sqlite")
+_FK_BIGINT = BigInteger().with_variant(Integer, "sqlite")
+
 
 class Order(Base, TimestampMixin):
     """平台使用费订单（标识 + 状态 + 风险）。"""
 
     __tablename__ = "orders"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(_PK_BIGINT, primary_key=True, autoincrement=True)
     supplier_no: Mapped[str] = mapped_column(String(64))
     supplier_name: Mapped[str] = mapped_column(String(255))
     biz_no: Mapped[str] = mapped_column(String(64), index=True)
@@ -55,7 +60,7 @@ class OrderFeature(Base):
     __tablename__ = "order_features"
 
     order_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("orders.id", ondelete="CASCADE"), primary_key=True
+        _FK_BIGINT, ForeignKey("orders.id", ondelete="CASCADE"), primary_key=True
     )
 
     # A 类 · 缴费历史（截至中标时刻）
