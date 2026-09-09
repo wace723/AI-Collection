@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   Button,
   Card,
+  Collapse,
   DatePicker,
   Descriptions,
   Drawer,
@@ -25,16 +26,18 @@ import {
   listTasks,
   submitTaskResult,
 } from '../../api/tasks'
+import { getRecommendTalks } from '../../api/talk'
 import type {
   Task,
   TaskDetail,
   TaskResultInput,
   TaskResultType,
   TaskStatus,
+  TalkRecommend,
   User,
 } from '../../types/api'
 
-const { Text } = Typography
+const { Text, Paragraph } = Typography
 
 const PAGE_SIZE = 10
 
@@ -96,6 +99,7 @@ export default function Workbench() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [detail, setDetail] = useState<TaskDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [talk, setTalk] = useState<TalkRecommend | null>(null)
 
   const [resultOpen, setResultOpen] = useState(false)
   const [resultTask, setResultTask] = useState<Task | null>(null)
@@ -125,10 +129,19 @@ export default function Workbench() {
     fetchTasks(1, undefined)
   }, [fetchTasks])
 
+  const loadTalk = async (id: number) => {
+    try {
+      setTalk(await getRecommendTalks(id))
+    } catch {
+      setTalk(null)
+    }
+  }
+
   const refreshDetail = async (id: number) => {
     try {
       const d = await getTask(id)
       setDetail(d)
+      await loadTalk(id)
     } catch {
       /* ignore */
     }
@@ -148,10 +161,12 @@ export default function Workbench() {
   const openDetail = async (t: Task) => {
     setDetailOpen(true)
     setDetail(null)
+    setTalk(null)
     setDetailLoading(true)
     try {
       const d = await getTask(t.id)
       setDetail(d)
+      await loadTalk(t.id)
     } catch {
       /* ignore */
     } finally {
@@ -393,6 +408,48 @@ export default function Workbench() {
                 </Descriptions.Item>
               </Descriptions>
             )}
+
+            <Card
+              title="推荐话术"
+              size="small"
+              style={{ marginTop: 16 }}
+              extra={
+                talk ? (
+                  <Text type="secondary">
+                    账龄段 {talk.age_bucket}
+                    {talk.user_tag ? ` · ${talk.user_tag}` : ''}
+                  </Text>
+                ) : null
+              }
+            >
+              {talk && talk.templates.length > 0 ? (
+                <>
+                  <Paragraph style={{ marginBottom: 8 }}>
+                    {talk.templates[0].content}
+                  </Paragraph>
+                  {talk.templates.length > 1 && (
+                    <Collapse
+                      size="small"
+                      items={[
+                        {
+                          key: 'more',
+                          label: `其他候选话术（${talk.templates.length - 1}）`,
+                          children: talk
+                            .templates!.slice(1)
+                            .map((tp) => (
+                              <Paragraph key={tp.template_id} style={{ marginBottom: 4 }}>
+                                {tp.content}
+                              </Paragraph>
+                            )),
+                        },
+                      ]}
+                    />
+                  )}
+                </>
+              ) : (
+                <Text type="secondary">暂无匹配话术模板</Text>
+              )}
+            </Card>
           </>
         ) : null}
       </Drawer>

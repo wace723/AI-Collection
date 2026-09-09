@@ -227,15 +227,22 @@
       "title": "话术模板引擎（匹配+变量填充）",
       "description": "talk_templates 表；按 [风险档×账龄段×场景×用户特征] 匹配；ANY 兜底；变量占位符填充。",
       "dependencies": ["task-002"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "精确命中模板（对应 TC-TALK-01）",
         "ANY 回退匹配（对应 TC-TALK-02）",
         "变量占位符填充无残留（对应 TC-TALK-03）",
         "账龄段映射正确（对应 TC-TALK-04）"
       ],
-      "evidence": [],
-      "notes": "模板管理界面。"
+      "evidence": [
+        "pytest tests/test_talk.py -q → 21 passed（TC-TALK-01~04 含 10 个账龄边界参数化 + 精确/ANY回退/渲染无残留/排序优先级 + 权限 403/404/401/supervisor）",
+        "pytest -q 全量 → 119 passed（98 旧 + 21 新，无回归）",
+        "真实数据 E2E：dev.db seed 6 条默认模板；task1（HIGH/FIRST/账龄>90 天）→ 回退 ANY×ANY×ANY×ANY 兜底；变量已填充\"北京恒锐建设工程有限公司\"+订单号，无 { 拋留",
+        "后端 GET /api/talk/recommend?task_id=（登录可见，COLLECTOR 仅自己任务）；4 维匹配 [风险档×账龄段×场景×用户特征]，ANY 兜底，按总分降序",
+        "前端 Workbench 详情抽屉接入推荐话术区（主推话术 + 候选折叠）；npm run build ✓",
+        "seed.py 加 seed_default_talk_templates（6 条：HIGH×8_15×SECOND×MEMBER 精确 + HIGH×ANY×SECOND + HIGH×0_7×FIRST + MEDIUM/LOW + ANY×ANY×ANY×ANY 兜底）"
+      ],
+      "notes": "匹配维度 [风险档×账龄段×场景×用户特征]，每维精确=2分/ANY通配=1分/不匹配=排除，总分降序、同分按 id。user_feature_tag=None=通配，MEMBER 标签来自 is_member_at_win。renderer 支持 7 占位符：{供应商名称}/{service_fee_order_no}/{订单号}/{风险档}/{场景}/{应催日}/{会员状态}。AI 生成属 talk-002。模板管理 UI 未做（备注）。"
     },
     {
       "id": "talk-002",

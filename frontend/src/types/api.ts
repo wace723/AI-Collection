@@ -227,3 +227,23 @@ export interface BatchStatusOut {
   by_status: Record<string, number>
   by_tier: Record<string, number>
 }
+
+/** 推荐话术项（content 已渲染） */
+export interface TalkTemplateItem {
+  template_id: number
+  name: string
+  risk_tier: string
+  age_bucket: string
+  scene: string
+  user_feature_tag: string | null
+  content: string
+  score: number
+}
+
+/** 话术推荐响应 */
+export interface TalkRecommend {
+  task_id: number
+  age_bucket: string
+  user_tag: string | null
+  templates: TalkTemplateItem[]
+}

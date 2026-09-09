@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`（骨架就绪后）
-- 当前最高优先级未完成功能：`talk-001` 基础话术模板匹配（催收员工作台话术推荐后端）
-- 当前 blocker：无（wb-001 已 passing，催收员工作台前后端闭环可用）
+- 当前最高优先级未完成功能：`talk-002` AI 话术生成（LLM Provider 抽象 + mock + 降级）
+- 当前 blocker：无（talk-001 已 passing，话术模板匹配+变量填充+前端展示闭环可用）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -259,3 +259,33 @@
   - 话术推荐在工作台仅占位（talk-001 后补真实 GET /api/talk/recommend）
   - 主管手动改派（F-TASK-04 P1）未实现
 - 下一步最佳动作：开始 `talk-001` 基础话术模板匹配（话术引擎 + 模板表种子 + GET /api/talk/recommend），为工作台详情接入推荐话术
+
+### Session 010（CodeBuddy）
+
+- 日期：2026-09-09
+- 本轮目标：完成 `talk-001` 基础话术模板匹配（匹配 + 变量填充 + 前端展示）
+- 已完成：
+  - `services/talk_engine/matcher.py`：`map_age_bucket`（0_7/8_15/16_30/31_90/90_PLUS 边界）+ `derive_user_tag`（MEMBER）+ `match_templates`（4 维 [风险档×账龄段×场景×用户特征]，精确=2/ANY=1/不匹配排除，总分降序、同分按 id）
+  - `services/talk_engine/renderer.py`：`render`（7 占位符：{供应商名称}/{service_fee_order_no}/{订单号}/{风险档}/{场景}/{应催日}/{会员状态}）
+  - `services/talk_engine/recommend.py`：`recommend_talks` 编排（取 task/order/feature → match → render）
+  - `services/talk_engine/__init__.py` 导出
+  - `api/talk.py`：GET `/api/talk/recommend?task_id=`（登录可见，COLLECTOR 仅自己任务）
+  - `schemas/talk.py`：TalkTemplateOut / TalkRecommendOut
+  - `seed.py`：加 `seed_default_talk_templates`（6 条默认模板，幂等按 name）
+  - 前端 `api/talk.ts` + `types/api.ts`（TalkRecommend/TalkTemplateItem）
+  - 前端 `pages/Workbench/index.tsx`：详情抽屉加「推荐话术」区（主推话术 + 候选折叠 + 账龄段/标签展示）
+  - 测试 `tests/test_talk.py` 21 用例
+- 运行过的验证：
+  - `pytest tests/test_talk.py -q` → 21 passed
+  - `pytest -q` 全量 → 119 passed（98 旧 + 21 新，无回归）
+  - 端到端真实数据：dev.db seed 6 模板 → task1（HIGH/FIRST/账龄>90）回退 ANY×ANY×ANY×ANY，变量填充"北京恒锐建设工程有限公司"+订单号，无残留
+  - `npm run build` → ✓
+- 已记录证据：见 feature_list.json talk-001.evidence
+- 提交记录：`feat: talk-001 talk template engine (match + render + recommend api)`
+- 更新过的文件或工件：services/talk_engine/*（matcher/renderer/recommend/__init__）、api/talk.py、api/router.py、schemas/talk.py、seed.py、tests/test_talk.py、frontend api/talk.ts、types/api.ts、pages/Workbench/index.tsx、feature_list.json、claude-progress.md、session-handoff.md
+- 已知风险或未解决问题：
+  - 真实历史订单账龄普遍 >90 天（90_PLUS），默认模板对 HIGH/MEDIUM 90_PLUS 无精确匹配，回退 ANY 兜底——符合设计；后续可补 90_PLUS 精确模板
+  - user_feature_tag 仅 MEMBER 一种（derive_user_tag）；SMALL_FUND/VIP 等后续扩展
+  - AI 话术生成（talk-002）未做，工作台无 AI 生成按钮
+  - 话术模板管理 UI 未做（仅 seed 默认）
+- 下一步最佳动作：开始 `talk-002` AI 话术生成（LLMProvider 抽象 + MockLLM + POST /api/talk/generate + 开关 + 降级）

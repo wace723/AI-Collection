@@ -1,12 +1,13 @@
-"""种子数据脚本：插入默认用户 + 默认风险档配置。
+"""种子数据脚本：插入默认用户 + 默认风险档配置 + 默认话术模板。
 
 用法：python seed.py（在 backend/ 目录下运行）
-幂等：已存在的用户/active 配置均跳过，不重复插入。
+幂等：已存在的用户/active 配置/同名模板均跳过，不重复插入。
 默认密码统一为 admin123，仅用于开发环境。
 """
 
 from app.core.database import SessionLocal
 from app.core.security import hash_password
+from app.models.talk import TalkTemplate
 from app.models.user import User
 from app.services.risk_engine.config_service import seed_default_config
 
@@ -20,6 +21,74 @@ DEFAULT_USERS = [
 ]
 
 DEFAULT_PASSWORD = "admin123"
+
+# 默认话术模板（talk-001）。维度：[风险档 × 账龄段 × 场景 × 用户特征]
+# user_feature_tag=None 表示该维度通配（ANY）。
+DEFAULT_TALK_TEMPLATES = [
+    {
+        "name": "HIGH×8_15×SECOND×MEMBER",
+        "risk_tier": "HIGH",
+        "age_bucket": "8_15",
+        "scene": "SECOND",
+        "user_feature_tag": "MEMBER",
+        "content": "尊敬的{供应商名称}（会员），您订单{service_fee_order_no}的平台使用费已逾期，请尽快登录平台完成缴费，避免影响后续投标资格与会员权益。",
+    },
+    {
+        "name": "HIGH×ANY×SECOND×ANY",
+        "risk_tier": "HIGH",
+        "age_bucket": "ANY",
+        "scene": "SECOND",
+        "user_feature_tag": None,
+        "content": "{供应商名称}您好，订单{service_fee_order_no}的平台使用费仍未缴纳，请尽快处理，避免影响后续业务。",
+    },
+    {
+        "name": "HIGH×0_7×FIRST×ANY",
+        "risk_tier": "HIGH",
+        "age_bucket": "0_7",
+        "scene": "FIRST",
+        "user_feature_tag": None,
+        "content": "{供应商名称}，您的平台使用费订单{service_fee_order_no}已到应缴日{应催日}，请及时缴费。",
+    },
+    {
+        "name": "MEDIUM×31_90×FIRST×ANY",
+        "risk_tier": "MEDIUM",
+        "age_bucket": "31_90",
+        "scene": "FIRST",
+        "user_feature_tag": None,
+        "content": "{供应商名称}，订单{service_fee_order_no}平台使用费已逾期较久（{风险档}档），请尽快缴纳。",
+    },
+    {
+        "name": "LOW×90_PLUS×FIRST×ANY",
+        "risk_tier": "LOW",
+        "age_bucket": "90_PLUS",
+        "scene": "FIRST",
+        "user_feature_tag": None,
+        "content": "{供应商名称}，订单{service_fee_order_no}平台使用费长期未缴，请尽快处理以免影响信用记录。",
+    },
+    {
+        "name": "ANY×ANY×ANY×ANY",
+        "risk_tier": "ANY",
+        "age_bucket": "ANY",
+        "scene": "ANY",
+        "user_feature_tag": None,
+        "content": "{供应商名称}您好，订单{service_fee_order_no}的平台使用费待缴纳，请尽快登录平台处理。",
+    },
+]
+
+
+def seed_default_talk_templates(db) -> int:
+    """插入默认话术模板（按 name 幂等）。返回新建数。"""
+    created = 0
+    for item in DEFAULT_TALK_TEMPLATES:
+        existing = (
+            db.query(TalkTemplate).filter(TalkTemplate.name == item["name"]).first()
+        )
+        if existing:
+            continue
+        db.add(TalkTemplate(is_active=True, **item))
+        created += 1
+    db.commit()
+    return created
 
 
 def seed_users(db) -> tuple[list[str], list[str]]:
@@ -59,6 +128,13 @@ def seed() -> None:
             print("  风险档配置: 新建 v1（high=70, medium=30 + 5 催收时点）")
         else:
             print("  风险档配置: 跳过(已存在 active 配置)")
+
+        # 话术模板
+        talk_created = seed_default_talk_templates(db)
+        if talk_created:
+            print(f"  话术模板: 新建 {talk_created} 条（HIGH/MEDIUM/LOW + ANY 兜底）")
+        else:
+            print("  话术模板: 跳过(已存在)")
 
         print(f"  默认密码: {DEFAULT_PASSWORD}")
     finally:
