@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # 风险计算 Provider（risk-001 实现，mock → algorithm 可切换）
     RISK_PROVIDER: str = "mock"  # mock | algorithm
 
+    # 每日跑批 cron（task-001 APScheduler，默认每日 00:00）
+    BATCH_RUN_CRON: str = "0 0 * * *"
+
     model_config = SettingsConfigDict(
         env_file=str(BACKEND_DIR / ".env"),
         env_file_encoding="utf-8",

@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, CreatedAtMixin
@@ -17,10 +17,15 @@ class Task(Base, CreatedAtMixin):
     """催收任务。
 
     幂等关键：batch_id + order_id + day_offset 三元组唯一。
-    该复合唯一约束留给 task-001 的迁移增量加，infra-001 仅声明普通列。
+    task-001 起由模型 + 增量迁移共同声明该唯一约束（infra-001 仅建普通列）。
     """
 
     __tablename__ = "tasks"
+    __table_args__ = (
+        UniqueConstraint(
+            "batch_id", "order_id", "day_offset", name="uq_tasks_batch_order_day"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(_PK_BIGINT, primary_key=True, autoincrement=True)
     order_id: Mapped[int] = mapped_column(

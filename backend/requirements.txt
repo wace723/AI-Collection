@@ -12,6 +12,9 @@ bcrypt==4.2.1
 psycopg[binary]==3.2.3
 python-multipart==0.0.20
 
+# 任务调度（task-001 每日跑批）
+APScheduler==3.10.4
+
 # 测试
 pytest==8.3.4
 httpx==0.28.1

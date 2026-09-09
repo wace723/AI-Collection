@@ -5,8 +5,9 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`（骨架就绪后）
-- 当前最高优先级未完成功能：`task-001` 催收任务生成（跑批核心逻辑）（risk-002 已 passing）
-- 当前 blocker：无（risk-002 已 passing，风险档配置+催收时点+版本化回滚可用）
+- 当前最高优先级未完成功能：`task-002` 任务分配（PENDING_ASSIGN → 轮询分给 3 名催收员）（task-001 已 passing）
+- 当前 blocker：无（task-001 已 passing，跑批生成+幂等+定时调度可用；risk-002 配置可用）
+- 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
 
@@ -174,3 +175,34 @@
   - `_deactivate_all` 后必须 `db.expire_all()`，否则 identity map 缓存旧 is_active（坑点，已记录）
   - 前端 chunk 超 500kB 警告（antd 整包），沿用记录，后续按需 code-split
 - 下一步最佳动作：开始 `task-001` 催收任务生成（跑批核心逻辑），依赖 risk-002 的催收时点配置
+
+### Session 007（CodeBuddy）
+
+- 日期：2026-09-09
+- 本轮目标：完成 `task-001` 催收任务生成（跑批核心逻辑）
+- 工具：CodeBuddy（新增 `CODEBUDDY.md` 路由层，与 `CLAUDE.md` 并行；两工具共享同一套 docs/feature_list/claude-progress，不建平行状态文件）
+- 已完成：
+  - `models/task.py`：加 `uq_tasks_batch_order_day` 复合唯一约束（`__table_args__`）+ alembic 迁移 `c4a2b9d1e0f1`（SQLite batch 重建表，无历史数据安全）
+  - `services/task_engine/batch.py`（新）：`BatchResult`(frozen) + `generate_tasks`（扫描未支付(含 pay_status NULL)→命中 win_bid_date+day_offset<=today→幂等生成）+ `run_batch`(recalc_risk 编排) + `BatchNotReadyError`
+  - `services/task_engine/__init__.py`：导出稳定入口
+  - `scheduler/`（新包）：`jobs.py`（run_daily_batch_job + build_scheduler，cron `0 0 * * *`，coalesce/max_instances=1/misfire_grace_time）；`main.py` 改用 lifespan 启动/关闭调度器（TestClient 非 ctx 不触发）
+  - `api/tasks.py`（新）：POST `/api/tasks/batch/run`（ADMIN，`?recalc=true`）+ GET `/api/tasks/batch/status/{batch_id}`（登录）；router 挂载 /tasks
+  - `schemas/task.py`（新）：BatchRunOut / BatchStatusOut
+  - `core/config.py`：加 `BATCH_RUN_CRON`
+  - `requirements.txt`：加 APScheduler==3.10.4（Python 3.13 下 import 验证通过）
+  - 测试 `tests/test_task_generation.py` 20 用例
+- 运行过的验证：
+  - `pytest tests/test_task_generation.py -q` → 20 passed
+  - `pytest -q` 全量 → 74 passed（54 旧 + 20 新，无回归）
+  - `alembic upgrade head` → 新迁移成功；PRAGMA index_list(tasks) → sqlite_autoindex unique=1 确认约束
+  - 端到端真实数据：dev.db 20 条未支付订单模拟每日跑批（run_batch recalc_risk=True）→ 30 任务 PENDING_ASSIGN（HIGH 15/MEDIUM 12/LOW 3）batch=2026-09-09；同日再次跑批 → generated=0 idempotent_skipped=30
+  - `npm run build` → ✓（无前端改动，回归确认）
+- 已记录证据：见 feature_list.json task-001.evidence
+- 提交记录：`feat: task-001 collection task generation (batch run + idempotency + scheduler)`（含新增 CODEBUDDY.md）
+- 更新过的文件或工件：CODEBUDDY.md（新）、requirements.txt、models/task.py、alembic/versions/c4a2b9d1e0f1_add_tasks_unique_constraint.py（新）、services/task_engine/*、scheduler/*（新）、api/tasks.py（新）、api/router.py、schemas/task.py（新）、core/config.py、main.py、tests/test_task_generation.py（新）、feature_list.json、claude-progress.md、session-handoff.md
+- 已知风险或未解决问题：
+  - APScheduler 后台线程经 lifespan 启动；本地已验证手动触发路径，真实 0 点触发行为留待长期运行观察
+  - scheduler job 内 logger.exception 后抛出（由 APScheduler 捕获），保证失败可观察
+  - run_batch recalc 对无特征订单 mock=50 → MEDIUM（确定性可预期）
+  - dev.db 现含 30 条本地演示任务（2026-09-09 batch），属本地数据，不影响仓库
+- 下一步最佳动作：开始 `task-002` 任务分配（PENDING_ASSIGN → 规则/轮询分给 3 名催收员），依赖 task-001 已 passing

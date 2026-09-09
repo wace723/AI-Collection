@@ -149,7 +149,7 @@
       "title": "催收任务生成（跑批核心逻辑）",
       "description": "APScheduler 凌晨跑批；扫描未支付订单，命中催收时点且未支付→生成任务；幂等控制。",
       "dependencies": ["risk-002"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "高风险多轮任务按时点生成（对应 TC-TASK-01）",
         "未到时点不生成（对应 TC-TASK-02）",
@@ -159,8 +159,15 @@
         "中/低风险时点正确（对应 TC-TASK-06/07/08）",
         "支持手动触发跑批"
       ],
-      "evidence": [],
-      "notes": "幂等关键：batch_id+order_id+day_offset 三元组唯一。"
+      "evidence": [
+        "pytest tests/test_task_generation.py -q → 20 passed（TC-TASK-01~08/13 + pay_status NULL 视为未支付 + DB 唯一约束兜底 + run_batch recalc 编排 + 手动触发 401/403/400 + 批次状态聚合）",
+        "pytest -q 全量 → 74 passed（54 旧 + 20 新，无回归）",
+        "alembic upgrade head → c4a2b9d1e0f1 add tasks unique constraint；PRAGMA index_list(tasks) → sqlite_autoindex_tasks_1 unique=1（uq_tasks_batch_order_day 生效）",
+        "真实数据 E2E：dev.db 20 条未支付订单模拟每日跑批（run_batch recalc_risk=True）→ 生成 30 任务 PENDING_ASSIGN（HIGH 15/MEDIUM 12/LOW 3）batch=2026-09-09；同日再次跑批 → generated=0 idempotent_skipped=30",
+        "APScheduler：daily_collection_batch cron '0 0 * * *' 经 main.py lifespan 启动/关闭（coalesce/max_instances=1/misfire_grace_time=3600）；TestClient 非 ctx 模式不触发后台线程",
+        "前端 npm run build ✓（无改动，回归确认）"
+      ],
+      "notes": "幂等：batch_id+order_id+day_offset 三元组唯一（迁移 c4a2b9d1e0f1）。业务去重键 (order_id, day_offset) 排除 CANCELLED，跨日补跑不重复；run_batch 支持 recalc_risk 编排；手动触发 POST /api/tasks/batch/run?recalc=true。"
     },
     {
       "id": "task-002",
