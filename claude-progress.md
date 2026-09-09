@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`（骨架就绪后）
-- 当前最高优先级未完成功能：`infra-002` 认证授权（JWT）
-- 当前 blocker：无（infra-001 已 passing，骨架可运行）
+- 当前最高优先级未完成功能：`data-001` CSV 上传与解析（高风险未支付订单数据是催收任务的来源）
+- 当前 blocker：无（infra-002 已 passing，鉴权可用）
 
 ## 已完成的基础工件
 
@@ -78,3 +78,24 @@
   - dev.db 生成在 backend/ 下（已被 .gitignore 覆盖）
   - chunk 超 500kB 警告（antd 整包），后续按需 code-split
 - 下一步最佳动作：开始 `infra-002` 认证授权（JWT 登录、角色权限、3 名催收员+主管+管理员种子数据）
+
+### Session 003
+
+- 日期：2026-09-09
+- 本轮目标：完成 `infra-002` 认证授权（JWT + 角色权限 + 种子数据）
+- 已完成：
+  - 后端：security.py 4 函数实现（bcrypt 原生 API + jose JWT）、deps.py 加 get_current_user/require_role、schemas/auth.py、api/auth.py（login/me/admin-only/supervisor-or-admin）、router.py 挂载、seed.py 种子脚本
+  - 测试：test_auth.py 9 个用例 + conftest 加 seed_users fixture，pytest 12 passed
+  - 前端：types 加 User/LoginData、auth.ts 实现、RequireAuth 路由守卫、Login 表单接入、App.tsx 包裹守卫、client 401 跳转
+- 运行过的验证：
+  - `pytest -q` → 12 passed
+  - `python seed.py` → 5 个用户入库
+  - curl：登录 200+token、/me 带 token 200、无 token 401、admin-only admin 200/collector 403、错误密码 401
+  - `npm run build` → ✓ built
+  - 前后端联调：vite proxy POST /api/auth/login → 登录成功，错误密码 401
+- 已记录证据：见 feature_list.json infra-002.evidence
+- 已知风险或未解决问题：
+  - passlib 1.7.4 + bcrypt 5.0 不兼容（读不到 bcrypt 版本号误判密码长度），已弃用 passlib 改用 bcrypt 原生 API
+  - 测试内存 SQLite 需 StaticPool 共享连接，否则 TestClient 跨连接 no such table
+  - bcrypt 哈希有 DeprecationWarning（utcnow），无害
+- 下一步最佳动作：开始 `data-001` CSV 上传与解析（37 列特征入库），这是催收任务数据来源

@@ -22,8 +22,10 @@ client.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       clearToken()
-      // infra-002 接入鉴权后跳登录；infra-001 仅提示
-      message.warning('登录已失效，请重新登录')
+      // 跳登录页（避免在登录页循环跳转）
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login'
+      }
     } else {
       const msg = error.response?.data?.detail || error.message || '请求失败'
       message.error(msg)

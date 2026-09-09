@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import AppLayout from './components/Layout'
+import RequireAuth from './components/RequireAuth'
 import Login from './pages/Login'
 import Workbench from './pages/Workbench'
 import Supervisor from './pages/Supervisor'
@@ -15,13 +16,15 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
-          {/* infra-001 不加路由守卫，infra-002 接入 */}
-          <Route path="/" element={<AppLayout />}>
-            <Route index element={<Navigate to="/workbench" replace />} />
-            <Route path="workbench" element={<Workbench />} />
-            <Route path="supervisor" element={<Supervisor />} />
-            <Route path="config" element={<Config />} />
-            <Route path="dashboard" element={<Dashboard />} />
+          {/* 受保护路由：无 token 跳 /login */}
+          <Route element={<RequireAuth />}>
+            <Route path="/" element={<AppLayout />}>
+              <Route index element={<Navigate to="/workbench" replace />} />
+              <Route path="workbench" element={<Workbench />} />
+              <Route path="supervisor" element={<Supervisor />} />
+              <Route path="config" element={<Config />} />
+              <Route path="dashboard" element={<Dashboard />} />
+            </Route>
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>

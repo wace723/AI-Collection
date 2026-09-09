@@ -42,15 +42,25 @@
       "title": "认证授权（JWT）",
       "description": "JWT 登录/登出/当前用户；角色 COLLECTOR/SUPERVISOR/ADMIN；权限校验中间件。",
       "dependencies": ["infra-001"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "登录接口返回 JWT",
         "/api/auth/me 用 JWT 返回用户信息",
-        "COLLECTOR 访问 /api/config/risk 返回 403",
-        "ADMIN 访问配置接口返回 200"
+        "COLLECTOR 访问 /api/auth/admin-only 返回 403",
+        "ADMIN 访问配置接口返回 200",
+        "种子数据：3 名催收员 + 1 主管 + 1 管理员"
       ],
-      "evidence": [],
-      "notes": "种子数据：3 名催收员 + 1 主管 + 1 管理员。"
+      "evidence": [
+        "pytest 12 passed（3 health + 9 auth）",
+        "python seed.py → 新建 admin/supervisor/collector1/2/3（密码 admin123）",
+        "curl POST /api/auth/login admin/admin123 → 200 + access_token + user ADMIN",
+        "curl GET /api/auth/me 带 token → 200 + admin/ADMIN；无 token → 401",
+        "curl GET /api/auth/admin-only：admin→200，collector1→403",
+        "curl 错误密码登录 → 401",
+        "前端 npm run build 通过；经 vite proxy POST /api/auth/login → 登录成功",
+        "前端 RequireAuth 守卫 + Login 表单接入 + client 401 跳转"
+      ],
+      "notes": "passlib 1.7.4 与 bcrypt 5.0 不兼容（读不到版本号误判密码长度），改用 bcrypt 原生 API。测试用 StaticPool 共享内存 SQLite 连接，否则 TestClient 跨连接查不到表。"
     },
     {
       "id": "data-001",
