@@ -16,16 +16,21 @@ from collections import Counter
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import case
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, get_db, require_role
+from app.models.order import Order, OrderFeature
 from app.models.task import Task
 from app.models.user import User
-from app.schemas.common import APIResponse
+from app.schemas.common import APIResponse, PagedResponse
 from app.schemas.task import (
     AssignmentRunOut,
     BatchRunOut,
     BatchStatusOut,
+    FeatureBriefOut,
+    OrderBriefOut,
+    TaskDetailOut,
     TaskOut,
     TaskResultIn,
 )
@@ -42,8 +47,84 @@ from app.services.task_engine import (
 
 router = APIRouter()
 
+# 列表排序：风险档 HIGH<MEDIUM<LOW（数值越小越前）；同档按 due_date 升序（账龄倒序）；
+# 再按 id 兜底稳定。用 sqlalchemy.case（非 func.case，避免 risk-002 记录的 else_ 坑）。
+_RISK_ORDER = case(
+    (Task.risk_tier == "HIGH", 0),
+    (Task.risk_tier == "MEDIUM", 1),
+    (Task.risk_tier == "LOW", 2),
+    else_=3,
+)
 
-# ── 跑批与批次状态（task-001） ──────────────────────────────────────
+
+# ── 任务列表与详情（wb-001） ───────────────────────────────────────
+
+
+@router.get("", response_model=APIResponse[PagedResponse[TaskOut]])
+def list_tasks(
+    status_filter: str | None = Query(default=None, alias="status"),
+    assignee: int | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> APIResponse[PagedResponse[TaskOut]]:
+    """任务列表（按风险+账龄排序）。
+
+    - COLLECTOR：强制只看分配给自己的任务（忽略 assignee 入参）
+    - SUPERVISOR/ADMIN：可选 assignee 过滤，不传则看全部
+    """
+    q = db.query(Task)
+    if current_user.role == "COLLECTOR":
+        q = q.filter(Task.assignee_id == current_user.id)
+    elif assignee is not None:
+        q = q.filter(Task.assignee_id == assignee)
+    if status_filter:
+        q = q.filter(Task.status == status_filter)
+
+    total = q.count()
+    rows = (
+        q.order_by(_RISK_ORDER, Task.due_date, Task.id)
+        .offset((page - 1) * size)
+        .limit(size)
+        .all()
+    )
+    return APIResponse(
+        data=PagedResponse(
+            items=[TaskOut.model_validate(r) for r in rows],
+            total=total,
+            page=page,
+            limit=size,
+        )
+    )
+
+
+@router.get("/{task_id}", response_model=APIResponse[TaskDetailOut])
+def get_task(
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> APIResponse[TaskDetailOut]:
+    """任务详情（含订单摘要 + 特征摘要）。
+
+    COLLECTOR 只能看分配给自己的任务，否则 403。
+    """
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"任务 {task_id} 不存在")
+    if current_user.role == "COLLECTOR" and task.assignee_id != current_user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "无权查看他人任务")
+
+    order = db.get(Order, task.order_id)
+    feature = db.get(OrderFeature, task.order_id)
+    base = TaskOut.model_validate(task)
+    return APIResponse(
+        data=TaskDetailOut(
+            **base.model_dump(),
+            order=OrderBriefOut.model_validate(order) if order else None,
+            feature=FeatureBriefOut.model_validate(feature) if feature else None,
+        )
+    )
 
 
 @router.post("/batch/run", response_model=APIResponse[BatchRunOut])

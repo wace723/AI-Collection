@@ -21,3 +21,12 @@ class Pagination(BaseModel):
     total: int
     page: int
     limit: int
+
+
+class PagedResponse(BaseModel, Generic[T]):
+    """分页列表响应。"""
+
+    items: list[T]
+    total: int
+    page: int
+    limit: int

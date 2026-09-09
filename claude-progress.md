@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`（骨架就绪后）
-- 当前最高优先级未完成功能：`wb-001` 催收工作台（任务列表/详情/结果回填 UI）
-- 当前 blocker：无（task-002 已 passing，跑批生成+分配+状态机可用；前端工作台待做）
+- 当前最高优先级未完成功能：`talk-001` 基础话术模板匹配（催收员工作台话术推荐后端）
+- 当前 blocker：无（wb-001 已 passing，催收员工作台前后端闭环可用）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -233,3 +233,29 @@
   - 主管手动改派（F-TASK-04 P1）尚未实现，task-002 只做系统自动分配
   - 前端工作台 UI（wb-001）尚未做，claim/result 当前只能 API 调用
 - 下一步最佳动作：开始 `wb-001` 催收工作台（任务列表/详情/领取/回填前端 UI），依赖 task-002 后端已 passing
+
+### Session 009（CodeBuddy）
+
+- 日期：2026-09-09
+- 本轮目标：完成 `wb-001` 催收工作台（任务列表/详情/领取/回填 前后端）
+- 已完成：
+  - 后端 GET `/api/tasks`（分页 + status/assignee 过滤 + 风险档+账龄排序；COLLECTOR 强制只看自己）+ GET `/api/tasks/{id}`（订单摘要+特征摘要）
+  - `schemas/common.py`：加 `PagedResponse[T]`；`schemas/task.py`：加 `OrderBriefOut`/`FeatureBriefOut`/`TaskDetailOut`
+  - 排序用 `sqlalchemy.case`（HIGH<MEDIUM<LOW + due_date 升序 + id），规避 risk-002 记录的 func.case else_ 坑
+  - 前端 `api/tasks.ts`：listTasks/getTask/claimTask/submitTaskResult/runBatch/runAssign/getBatchStatus
+  - 前端 `types/api.ts`：Task/TaskList/TaskDetail/TaskResultInput/BatchRunOut/AssignmentRunOut/BatchStatusOut 等
+  - 前端 `pages/Workbench/index.tsx`：待办列表（风险 Tag/状态过滤/分页）+ 详情抽屉（订单信息+任务信息+用户特征画像）+ 领取按钮 + 回填 Modal（PROMISE 动态显示承诺日 DatePicker）
+  - 测试 `tests/test_workbench.py` 11 用例
+- 运行过的验证：
+  - `pytest tests/test_workbench.py -q` → 11 passed
+  - `pytest -q` 全量 → 98 passed（87 旧 + 11 新，无回归）
+  - `npm run build` → ✓（tsc -b + vite build，3051 modules）
+- 已记录证据：见 feature_list.json wb-001.evidence
+- 提交记录：`feat: wb-001 collection workbench (task list/detail/claim/result frontend)`
+- 更新过的文件或工件：schemas/common.py、schemas/task.py、api/tasks.py、tests/test_workbench.py、frontend src/types/api.ts、api/tasks.ts、pages/Workbench/index.tsx、feature_list.json、claude-progress.md、session-handoff.md
+- 已知风险或未解决问题：
+  - 前端 chunk 1.35MB（antd 整包），沿用记录，后续按需 code-split
+  - 列表 API 排序在 SQLite 用 case 表达式（生产 PG 同样支持）
+  - 话术推荐在工作台仅占位（talk-001 后补真实 GET /api/talk/recommend）
+  - 主管手动改派（F-TASK-04 P1）未实现
+- 下一步最佳动作：开始 `talk-001` 基础话术模板匹配（话术引擎 + 模板表种子 + GET /api/talk/recommend），为工作台详情接入推荐话术

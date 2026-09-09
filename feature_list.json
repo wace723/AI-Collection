@@ -201,7 +201,7 @@
       "title": "催收工作台前端",
       "description": "催收员待办列表（按风险/账龄排序）、任务详情、用户特征画像、处理结果回填、领取/释放。",
       "dependencies": ["task-002", "infra-002"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "催收员只见自己任务（对应 TC-WB-01）",
         "列表按风险+账龄排序（对应 TC-WB-02）",
@@ -210,8 +210,15 @@
         "异议处理升级（对应 TC-WB-05）",
         "权限控制生效（对应 TC-WB-06）"
       ],
-      "evidence": [],
-      "notes": "React + Ant Design。"
+      "evidence": [
+        "pytest tests/test_workbench.py -q → 11 passed（TC-WB-01~06 + 详情 404 + 他人任务 403 + 状态过滤/分页 + 未登录 401）",
+        "pytest -q 全量 → 98 passed（87 旧 + 11 新，无回归）",
+        "后端 GET /api/tasks（COLLECTOR 强制只看自己、SUPERVISOR/ADMIN 全部或按 assignee 过滤）+ GET /api/tasks/{id}（订单摘要+特征摘要）；排序用 sqlalchemy.case 风险档 + due_date 升序",
+        "前端 Workbench 页面：待办列表（风险/账龄排序、状态过滤、分页）+ 任务详情抽屉（订单+特征画像）+ 领取 + 回填表单（PROMISE 动态显示承诺日）；npm run build 通过",
+        "真实数据联调基础：dev.db 30 个已分配任务（task-002 留），collector1 视角后端强制只返回自己的 10 个（API 测试已覆盖语义）",
+        "前端 npm run build ✓"
+      ],
+      "notes": "React 19 + Ant Design 5。列表排序用 sqlalchemy.case（非 func.case，规避 risk-002 的 else_ 坑）。TaskDetailOut 含 OrderBriefOut/FeatureBriefOut。COLLECTOR 详情看他人任务 403。话术占位（talk-001 后补真实推荐）。"
     },
     {
       "id": "talk-001",
