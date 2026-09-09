@@ -5,10 +5,11 @@ import type { UploadRequestOption } from 'rc-upload/lib/interface'
 import { uploadCsv } from '../../api/data'
 import { getMe } from '../../api/auth'
 import type { UploadSummary } from '../../types/api'
+import RiskConfigPanel from './RiskConfigPanel'
 
 const { Dragger } = Upload
 
-/** CSV 上传区 + 最近上传结果 */
+/** 配置后台：CSV 上传 + 风险档配置（阈值+催收时点，版本化） */
 export default function Config() {
   const [result, setResult] = useState<UploadSummary | null>(null)
   const [loading, setLoading] = useState(false)
@@ -50,7 +51,7 @@ export default function Config() {
     : []
 
   if (!userLoaded) {
-    return <Card title="配置后台 — 数据上传" loading />
+    return <Card title="配置后台" loading />
   }
 
   if (!isAdmin) {
@@ -59,7 +60,7 @@ export default function Config() {
         <Alert
           type="warning"
           message="权限不足"
-          description="CSV 上传仅管理员可操作。"
+          description="配置后台仅管理员可操作。"
           showIcon
         />
       </Card>
@@ -67,48 +68,52 @@ export default function Config() {
   }
 
   return (
-    <Card title="配置后台 — 数据上传">
-      <Dragger
-        accept=".csv"
-        multiple={false}
-        showUploadList={false}
-        customRequest={handleUpload}
-        disabled={loading}
-      >
-        <p className="ant-upload-drag-icon">
-          <InboxOutlined />
-        </p>
-        <p className="ant-upload-text">点击或拖拽 CSV 文件到此处上传</p>
-        <p className="ant-upload-hint">
-          支持 GBK / UTF-8 编码，37 列平台使用费特征文件，按服务费订单号自动去重
-        </p>
-      </Dragger>
+    <>
+      <Card title="数据上传 — CSV" style={{ marginBottom: 24 }}>
+        <Dragger
+          accept=".csv"
+          multiple={false}
+          showUploadList={false}
+          customRequest={handleUpload}
+          disabled={loading}
+        >
+          <p className="ant-upload-drag-icon">
+            <InboxOutlined />
+          </p>
+          <p className="ant-upload-text">点击或拖拽 CSV 文件到此处上传</p>
+          <p className="ant-upload-hint">
+            支持 GBK / UTF-8 编码，37 列平台使用费特征文件，按服务费订单号自动去重
+          </p>
+        </Dragger>
 
-      {result && (
-        <div style={{ marginTop: 24 }}>
-          <Table
-            columns={columns}
-            dataSource={tableData}
-            pagination={false}
-            size="small"
-          />
-          {result.errors.length > 0 && (
-            <Alert
-              style={{ marginTop: 12 }}
-              type="error"
-              message="部分行解析失败"
-              description={
-                <ul style={{ margin: 0, paddingLeft: 16 }}>
-                  {result.errors.map((e, i) => (
-                    <li key={i}>{e}</li>
-                  ))}
-                </ul>
-              }
-              showIcon
+        {result && (
+          <div style={{ marginTop: 24 }}>
+            <Table
+              columns={columns}
+              dataSource={tableData}
+              pagination={false}
+              size="small"
             />
-          )}
-        </div>
-      )}
-    </Card>
+            {result.errors.length > 0 && (
+              <Alert
+                style={{ marginTop: 12 }}
+                type="error"
+                message="部分行解析失败"
+                description={
+                  <ul style={{ margin: 0, paddingLeft: 16 }}>
+                    {result.errors.map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
+                }
+                showIcon
+              />
+            )}
+          </div>
+        )}
+      </Card>
+
+      <RiskConfigPanel />
+    </>
   )
 }

@@ -62,3 +62,45 @@ export interface OrderList {
   page: number
   limit: number
 }
+
+/** 风险重算结果统计 */
+export interface RecalcRiskSummary {
+  recalculated: number
+  skipped: number
+  tiers: Record<string, number>
+}
+
+/** 风险档枚举 */
+export type RiskTier = 'HIGH' | 'MEDIUM' | 'LOW'
+
+/** 催收场景枚举 */
+export type Scene = 'FIRST' | 'SECOND' | 'THIRD' | 'DISPUTE' | 'PROMISE'
+
+/** 催收时点配置 */
+export interface CollectionSchedule {
+  risk_tier: RiskTier
+  day_offset: number
+  scene: Scene
+  seq: number
+  is_active: boolean
+}
+
+/** 风险档配置（含关联催收时点） */
+export interface RiskConfig {
+  id: number
+  version: number
+  high_threshold: number
+  medium_threshold: number
+  is_active: boolean
+  created_by: number | null
+  created_at: string
+  updated_at: string
+  schedules: CollectionSchedule[]
+}
+
+/** 风险档配置更新输入 */
+export interface RiskConfigUpdate {
+  high_threshold: number
+  medium_threshold: number
+  schedules: CollectionSchedule[]
+}

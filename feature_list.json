@@ -121,15 +121,26 @@
       "title": "风险档配置（阈值+催收时点，版本化）",
       "description": "risk_configs + collection_schedules 表；阈值 high/medium 可配；每档催收时点+场景可配；版本管理与回滚。",
       "dependencies": ["risk-001"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "默认配置：HIGH=7/15/30天，MEDIUM=30天，LOW=90天（对应 TC-RISK-05）",
         "阈值边界值映射正确（对应 TC-RISK-03）",
         "改阈值重算生效（对应 TC-RISK-04）",
         "配置历史可查可回滚（对应 TC-RISK-06）"
       ],
-      "evidence": [],
-      "notes": "后台配置界面。"
+      "evidence": [
+        "pytest 54 passed（3 health + 9 auth + 9 data + 16 risk + 17 risk_config）",
+        "TC-RISK-05：test_default_config_values 全过——seed 后 GET /api/config/risk/current 返回 v1 high=70/medium=30 + 5 schedules [(HIGH,7,FIRST),(HIGH,15,SECOND),(HIGH,30,THIRD),(MEDIUM,30,FIRST),(LOW,90,FIRST)]，version=1, is_active=True；test_seed_default_config_idempotent 验证幂等",
+        "TC-RISK-03：test_boundary_tier_mapping_with_config + test_map_tier_unit_with_default_thresholds 全过——配置生效后 spy Provider 注入精确 prob，边界值 70→HIGH, 69.99→MEDIUM, 30→MEDIUM, 29.99→LOW, 0→LOW, 100→HIGH",
+        "TC-RISK-04：test_update_threshold_recalc_takes_effect 全过——v1(70/30)下 prob=65→MEDIUM；PUT(60/30)→v2 active/v1 inactive；recalc→65→HIGH；GET current 返回 v2 high=60",
+        "TC-RISK-06：test_history_and_rollback 全过——v1→PUT→v2→PUT→v3→history=[3,2,1]仅v3 active；rollback/1→新v4(=v1值70/30)active；history=[4,3,2,1]仅v4 active（v1行本身仍inactive，方案B）；test_rollback_nonexistent_version_404、test_rollback_current_active_400 验证边界",
+        "权限：test_update_requires_admin（COLLECTOR 403）、test_update_requires_auth（401）、test_history_requires_admin（COLLECTOR 403）、test_current_requires_auth（401）、test_current_empty_returns_404（空配置）",
+        "校验：test_update_high_le_medium_returns_422、test_update_invalid_day_offset_returns_422、test_update_invalid_scene_returns_422、test_update_empty_schedules_returns_422",
+        "端到端真实联调：seed v1(70/30)+5 schedules→上传CSV 20条→recalc HIGH=5/MEDIUM=12/LOW=3→PUT(60/30)→v2→recalc HIGH=8/MEDIUM=9/LOW=3（3笔MEDIUM升HIGH）→rollback/1→v3(=70/30)active→history=[v3 active, v2/v1 inactive]",
+        "前端联调：npm run build 通过；Config 页新增风险档配置面板（当前配置展示+编辑表单+历史回滚），api/config.ts 4 函数",
+        "init.sh 全流程退出码 0：alembic upgrade head + pytest 54 passed + npm run build ✓"
+      ],
+      "notes": "回滚策略=方案B（复制目标历史版本阈值+schedules为新version，旧记录永不被改），审计链完整，与update统一一条代码路径。表结构无变更（RiskConfig/CollectionSchedule 表 infra-001 已建好）。tier_mapper.get_active_thresholds 零改动自动读 active 配置。_deactivate_all 后 db.expire_all() 让 identity map 失效（否则 query 返回缓存旧 is_active）。_load_schedules 按业务序 HIGH<MEDIUM<LOW 排序（Python端 sorted）。回滚端点 POST /api/config/risk/rollback/{version}（docs §5.3 未显式列，TC-RISK-06 必需）。"
     },
     {
       "id": "task-001",

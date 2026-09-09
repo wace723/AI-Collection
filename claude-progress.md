@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`（骨架就绪后）
-- 当前最高优先级未完成功能：`risk-002` 风险档配置（阈值+催收时点，版本化）（risk-001 已 passing）
-- 当前 blocker：无（risk-001 已 passing，Mock 风险概率计算 + RiskProvider 抽象可用）
+- 当前最高优先级未完成功能：`task-001` 催收任务生成（跑批核心逻辑）（risk-002 已 passing）
+- 当前 blocker：无（risk-002 已 passing，风险档配置+催收时点+版本化回滚可用）
 
 ## 已完成的基础工件
 
@@ -145,3 +145,32 @@
   - mock 公式刻意不用 label_30/90/180/365 与 actual_pay_duration_days（防数据泄漏），上线真实算法前需做时间切割（沿用 docs/02 记录）
   - risk_configs 表尚无种子数据（tier_mapper 读不到 active 配置时回退默认 70/30），risk-002 做配置 CRUD + 默认种子
 - 下一步最佳动作：开始 `risk-002` 风险档配置（阈值+催收时点，版本化），为 task-001 跑批提供配置基础
+
+### Session 006
+
+- 日期：2026-09-09
+- 本轮目标：完成 `risk-002` 风险档配置（阈值+催收时点，版本化）
+- 已完成：
+  - `schemas/config.py`：RiskTierEnum/SceneEnum + ScheduleOut/RiskConfigOut + ScheduleIn/RiskConfigUpdateIn（model_validator 校验 high>medium、day_offset 正整数、枚举）
+  - `services/risk_engine/config_service.py`：ConfigSnapshot(frozen) + DEFAULT_SCHEDULES + get_current_config/get_config_history/update_config/rollback_to_version/seed_default_config
+  - `api/config.py`：GET /risk/current（登录可见）、PUT /risk（ADMIN）、GET /risk/history（ADMIN）、POST /risk/rollback/{version}（ADMIN）
+  - `api/router.py`：挂载 config 路由 /config
+  - `services/risk_engine/__init__.py`：导出 config_service 公共函数
+  - `seed.py`：加 seed_default_config 幂等种子（v1 70/30 + 5 schedules）
+  - 前端 `types/api.ts`：追加 RiskTier/Scene/CollectionSchedule/RiskConfig/RiskConfigUpdate/RecalcRiskSummary
+  - 前端 `api/config.ts`：getRiskConfig/updateRiskConfig/getRiskHistory/rollbackRisk
+  - 前端 `pages/Config/RiskConfigPanel.tsx`：当前配置展示+编辑表单（阈值+可增删催收时点）+历史回滚
+  - 前端 `pages/Config/index.tsx`：引入 RiskConfigPanel
+  - 测试 `tests/test_risk_config.py` 17 用例（TC-RISK-03~06 + 权限/校验/回滚边界）
+- 运行过的验证：
+  - `pytest tests/test_risk_config.py -q` → 17 passed
+  - `./init.sh` → 退出码 0：pytest 54 passed + npm run build ✓
+  - 端到端真实联调：seed v1(70/30)+5 schedules→上传CSV 20条→recalc HIGH=5/MEDIUM=12/LOW=3→PUT(60/30)→v2→recalc HIGH=8/MEDIUM=9/LOW=3→rollback/1→v3(=70/30)active→history=[v3 active, v2/v1 inactive]
+- 已记录证据：见 feature_list.json risk-002.evidence
+- 已知风险或未解决问题：
+  - 并发同 version 冲突：MVP 单 ADMIN 不处理（生产可加 UniqueConstraint(version)+IntegrityError 重试）
+  - is_active 唯一性靠单事务顺序+expire_all，无行锁（SQLite/PG 单线程 MVP 足够）
+  - 回滚=方案B（复制为新版本），历史表会增长（符合审计设计）
+  - `_deactivate_all` 后必须 `db.expire_all()`，否则 identity map 缓存旧 is_active（坑点，已记录）
+  - 前端 chunk 超 500kB 警告（antd 整包），沿用记录，后续按需 code-split
+- 下一步最佳动作：开始 `task-001` 催收任务生成（跑批核心逻辑），依赖 risk-002 的催收时点配置

@@ -4,72 +4,90 @@
 
 ## 当前已验证
 
-- 现在明确可用的部分：infra-001 骨架、infra-002 鉴权、data-001 CSV 上传与解析（37 列特征入库）、**risk-001 Mock 风险概率计算 + RiskProvider 抽象**
+- 现在明确可用的部分：infra-001 骨架、infra-002 鉴权、data-001 CSV 上传与解析、risk-001 Mock 风险概率计算+RiskProvider 抽象、**risk-002 风险档配置（阈值+催收时点，版本化）**
 - 这轮实际跑过的验证：
-  - 后端 pytest 37 passed（3 health + 9 auth + 9 data + 16 risk）
-  - 端到端真实联调：示例 CSV 20 条入库 → POST /api/data/orders/recalc-risk → 20 笔全部回写 risk_prob/risk_tier，三档分布 HIGH=5/MEDIUM=12/LOW=3，0 NULL，概率范围 18.75~85.83
+  - 后端 pytest 54 passed（3 health + 9 auth + 9 data + 16 risk + 17 risk_config）
+  - 端到端真实联调：seed v1(70/30)+5 schedules → 上传CSV 20条 → recalc HIGH=5/MEDIUM=12/LOW=3 → PUT(60/30)→v2 → recalc HIGH=8/MEDIUM=9/LOW=3（3笔M升H）→ rollback/1 → v3(=70/30) active → history=[v3 active, v2/v1 inactive]
+  - 前端 npm run build 通过；Config 页风险档配置面板（当前配置+编辑表单+历史回滚）
   - init.sh 退出码 0
 
-## 本轮改动（risk-001）
+## 本轮改动（risk-002）
 
 - 新增了哪些代码或行为：
-  - 后端 `services/risk_engine/provider.py`：RiskProvider 抽象 + MockRiskProvider（5 维确定性加权：历史缴费平均历时 0.35 + 历史平台使用费订单数 0.25 + 历史中标率 0.20 + 近90天活跃度 0.15 + 非会员 0.05）+ AlgorithmRiskProvider 占位
-  - 后端 `services/risk_engine/tier_mapper.py`：Thresholds + get_active_thresholds（读 active 配置，无则回退默认 70/30）+ map_tier 纯函数（≥即归档）
-  - 后端 `services/risk_engine/calculator.py`：recalculate_risks 编排器（拉订单+特征→算概率→映射→回写 Order.risk_prob/risk_tier/risk_calc_time）+ get_risk_provider 工厂（按 settings.RISK_PROVIDER 注入，可切 mock→algorithm）
-  - 后端 `services/risk_engine/__init__.py`：稳定对外入口
-  - 后端 `schemas/risk.py`：RecalcRiskSummary + RiskTierOut
-  - 后端 `core/config.py`：加 `RISK_PROVIDER` 开关（mock | algorithm）
-  - 后端 `api/data.py`：挂载 `POST /api/data/orders/recalc-risk`（ADMIN 权限）
-  - 测试 `tests/test_risk.py` 16 用例
+  - 后端 `schemas/config.py`：RiskTierEnum/SceneEnum + ScheduleOut/RiskConfigOut + ScheduleIn/RiskConfigUpdateIn（model_validator 校验 high>medium、day_offset 正整数、枚举）
+  - 后端 `services/risk_engine/config_service.py`：ConfigSnapshot(frozen) + DEFAULT_SCHEDULES(5条) + get_current_config/get_config_history/update_config/rollback_to_version/seed_default_config
+  - 后端 `api/config.py`：GET /risk/current（登录可见）、PUT /risk（ADMIN）、GET /risk/history（ADMIN）、POST /risk/rollback/{version}（ADMIN）
+  - 后端 `api/router.py`：挂载 /config；`risk_engine/__init__.py`：导出 config_service；`seed.py`：加 seed_default_config 幂等种子
+  - 前端 `types/api.ts`：追加 RiskTier/Scene/CollectionSchedule/RiskConfig/RiskConfigUpdate；`api/config.ts`：4 函数
+  - 前端 `pages/Config/RiskConfigPanel.tsx`（新）：当前配置展示+编辑表单（阈值+可增删催收时点+恢复默认）+历史回滚
+  - 前端 `pages/Config/index.tsx`：引入 RiskConfigPanel
+  - 测试 `tests/test_risk_config.py` 17 用例
 - 基础设施或 harness 发生了哪些变化：
-  - 无表结构变更（Order 已有 risk_prob/risk_tier/risk_calc_time 字段，RiskConfig/CollectionSchedule 表 infra-001 已建好）
-  - risk_configs 表尚无种子数据（tier_mapper 读不到 active 配置时回退默认 70/30）
+  - 无表结构变更（RiskConfig/CollectionSchedule 表 infra-001 已建好）
+  - seed.py 现在同时 seed 用户 + 风险档配置
 
 ## 仍损坏或未验证
 
 - 已知缺陷：无
-- 未验证路径：risk-002 及之后功能均 not_started
+- 未验证路径：task-001 及之后功能均 not_started
 - 下一轮会话需要注意的风险：
   - SQLite BigInteger 自增问题已彻底修复，勿重新引入裸 `BigInteger()` 作主键（沿用记录）
   - 测试内存 SQLite 必须用 StaticPool（沿用记录）
   - vite 监听 IPv6，前端访问用 `localhost` 不是 `127.0.0.1`（沿用记录）
-  - 后端默认端口 8000（与 vite proxy target 对齐）
-  - AlgorithmRiskProvider 为占位，调用抛 NotImplementedError，上线真实算法时实现
-  - mock 公式刻意不用 label_30/90/180/365 与 actual_pay_duration_days（防数据泄漏）
+  - 后端默认端口 8000
+  - **坑点**：`config_service._deactivate_all` 用 `synchronize_session=False` 后**必须 `db.expire_all()`**，否则 identity map 缓存旧 is_active，后续 query 返回错误值
+  - 回滚=方案B（复制为新版本），历史表会增长
+  - `_load_schedules` 按 Python 端业务序排序（HIGH<MEDIUM<LOW），勿用 DB `func.case(else_=)`（此 SQLAlchemy 版本不支持 else_ 关键字）
 
 ## 下一步最佳动作
 
-- 最高优先级未完成功能：`risk-002` 风险档配置（阈值+催收时点，版本化）
-- 为什么它是下一步：risk-001 已提供 MockRiskProvider + tier_mapper（读 active 配置回退默认阈值）；risk-002 补齐 risk_configs + collection_schedules 的 CRUD + 默认种子，为 task-001 跑批提供配置基础（催收时点表是任务生成的依据）
+- 最高优先级未完成功能：`task-001` 催收任务生成（跑批核心逻辑）
+- 为什么它是下一步：risk-002 已提供催收时点配置（collection_schedules 表：HIGH 7/15/30、MEDIUM 30、LOW 90），task-001 在此基础上跑批——扫描未支付订单，命中催收时点且未支付→生成任务，幂等控制
 - 什么结果才算 passing：
-  - 默认配置：HIGH=7/15/30天，MEDIUM=30天，LOW=90天（对应 TC-RISK-05）
-  - 阈值边界值映射正确（对应 TC-RISK-03）
-  - 改阈值重算生效（对应 TC-RISK-04）
-  - 配置历史可查可回滚（对应 TC-RISK-06）
+  - 高风险多轮任务按时点生成（TC-TASK-01）
+  - 未到时点不生成（TC-TASK-02）
+  - 已支付订单不生成（TC-TASK-03）
+  - 到时点但已支付跳过（TC-TASK-04）
+  - 重复跑批幂等（TC-TASK-05）
+  - 中/低风险时点正确（TC-TASK-06/07/08）
+  - 支持手动触发跑批
 - 这一步中哪些东西不要动：
   - docs/ 下需求架构（已是基线）
-  - RiskProvider 抽象 + MockRiskProvider 公式（risk-001 已落地，risk-002 只读配置不改算法）
-  - Order/OrderFeature 模型字段（data-001 已落地）
+  - RiskProvider 抽象 + MockRiskProvider 公式（risk-001 已落地）
+  - tier_mapper 的 get_active_thresholds/map_tier 纯函数（risk-001 已落地）
+  - config_service 的版本化/回滚逻辑（risk-002 已落地）
+  - RiskConfig/CollectionSchedule 模型字段
   - CLAUDE.md 的设计约束
 
-## risk-002 实现要点（给新会话的提示）
+## task-001 实现要点（给新会话的提示）
 
-- 复用：`RiskConfig`/`CollectionSchedule` 模型（risk.py 已建好）、`Thresholds`/`get_active_thresholds`/`map_tier`（tier_mapper 已实现）、`APIResponse[T]`、`require_role("ADMIN")`、`get_db`
+- 复用：
+  - `RiskConfig`/`CollectionSchedule` 模型（risk.py 已建好）
+  - `config_service.get_current_config(db)` 取当前生效配置 + schedules（risk-002）
+  - `Order` 模型（pay_status/win_bid_date/risk_tier 字段）
+  - `Task` 模型（task.py 已建好：order_id/service_fee_order_no/risk_tier/scene/day_offset/due_date/status/batch_id 等）
+  - `APIResponse[T]`、`require_role("ADMIN")`、`get_db`
 - 新建：
-  - `app/api/config.py`（risk 配置 CRUD 路由，对应 docs/02 §5.3）
-  - `app/schemas/config.py`（配置读写 schema）
-  - `app/services/config/` 或直接在 risk_engine 下加 `config_service.py`（配置版本管理 + 默认种子）
-  - 默认种子：risk_configs v1 (high=70, medium=30, is_active=True) + collection_schedules（HIGH 7/15/30 FIRST/SECOND/THIRD、MEDIUM 30 FIRST、LOW 90 FIRST）
-  - 配置更新逻辑：生成新版本号 +1，旧版本 is_active=False，新版本 is_active=True（版本化回滚）
-- 验证：改阈值 → recalc-risk 验证档位变化（risk-001 的 recalc 端点已可触发重算）
-- 参考 docs/02 §3.2.3/§3.2.4、docs/03 TC-RISK-03~06
+  - `app/scheduler/` 或 `app/services/task_engine/scheduler.py`（APScheduler 跑批，cron 0 0 * * *）
+  - `app/services/task_engine/batch.py`（跑批核心逻辑 generate_tasks）
+  - `app/api/tasks.py`（POST /api/tasks/batch/run 手动触发，ADMIN）
+  - `app/schemas/task.py`（TaskOut/BatchResult 等）
+- 核心逻辑（docs/02 §4.2.2）：
+  - 取 active config + schedules
+  - 查所有未支付订单（pay_status != 'PAID'）
+  - 对每订单每个 schedule：due_date = win_bid_date + day_offset；若 due_date <= today 且 pay_status != 'PAID' 且 task_exists(order_id, day_offset, batch_id) 为假 → 生成 task
+  - 幂等：batch_id（当日日期）+ order_id + day_offset 三元组唯一
+  - batch_id 用当日日期（TC-TASK-13）
+- 种子数据：可能需补未支付订单种子（或直接用 data-001 上传的真实订单）
+- 参考 docs/02 §4.2、docs/03 TC-TASK-01~08/13
 
 ## 命令
 
 - 启动命令：`./init.sh`（骨架就绪后 `RUN_START_COMMAND=1 ./init.sh`）
 - 验证命令：后端 `cd backend && pytest -q`；前端 `cd frontend && npm run build`
-- 种子数据：`cd backend && source .venv/Scripts/activate && python seed.py`（当前仅用户，risk-002 应在此加 risk_config 默认种子）
+- 种子数据：`cd backend && source .venv/Scripts/activate && python seed.py`（用户 + 风险档配置 v1）
 - 启动后端：`cd backend && uvicorn app.main:app --reload --port 8000`（用 localhost 访问）
 - 启动前端：`cd frontend && npm run dev`（5173，用 localhost 访问）
 - 默认账号：admin/supervisor/collector1-3，密码 admin123
-- 重算风险：登录 admin 后 `POST /api/data/orders/recalc-risk`（需先上传 CSV）
+- 风险重算：`POST /api/data/orders/recalc-risk`（需先上传 CSV）
+- 风险配置：`GET /api/config/risk/current`、`PUT /api/config/risk`、`GET /api/config/risk/history`、`POST /api/config/risk/rollback/{version}`

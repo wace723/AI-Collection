@@ -14,6 +14,17 @@ from app.services.risk_engine.provider import (
     MockRiskProvider,
     RiskProvider,
 )
+from app.services.risk_engine.config_service import (
+    DEFAULT_SCHEDULES,
+    AlreadyActiveError,
+    ConfigNotFoundError,
+    ConfigSnapshot,
+    get_config_history,
+    get_current_config,
+    rollback_to_version,
+    seed_default_config,
+    update_config,
+)
 from app.services.risk_engine.tier_mapper import (
     HIGH,
     LOW,
@@ -36,4 +47,13 @@ __all__ = [
     "HIGH",
     "MEDIUM",
     "LOW",
+    "DEFAULT_SCHEDULES",
+    "ConfigSnapshot",
+    "ConfigNotFoundError",
+    "AlreadyActiveError",
+    "get_current_config",
+    "get_config_history",
+    "update_config",
+    "rollback_to_version",
+    "seed_default_config",
 ]
