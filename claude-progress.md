@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`（骨架就绪后）
-- 当前最高优先级未完成功能：`e2e-001` 端到端完整闭环验证（dash-001 已 passing）
-- 当前 blocker：无（dash-001 数据大盘已 passing；真实 LLM 调通仍待用户确认 base_url 可达性）
+- 当前最高优先级未完成功能：**无**（全部 12 个功能 passing，MVP 验收完成）
+- 当前 blocker：无（e2e-001 端到端完整闭环验证已 passing；真实 LLM 调通仍待用户确认 base_url 可达性，非 MVP 阻塞项）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -349,3 +349,28 @@
   - 图表库新增 chunk（es-*.js 2.2MB/gzip 659KB），但 lazy 代码分割未进首屏主 chunk
   - dev.db 现有 1 笔测试回填 PAID（task5，本地数据，不影响仓库）
 - 下一步最佳动作：开始 `e2e-001` 端到端完整闭环验证（上传→算风险→跑批→分配→催收→话术→回填→大盘全流程贯通），这是 MVP 验收最后关卡
+
+### Session 013
+
+- 日期：2026-09-10
+- 本轮目标：完成 `e2e-001` 端到端完整闭环验证（MVP 验收最后关卡）
+- 工具：Claude Code（按固定工作循环：读状态→init.sh 验证基线→读 docs TC-E2E→实现测试→验证→真实联调）
+- 已完成：
+  - `tests/test_e2e.py`（新）：3 用例（TC-E2E-01/02/03），通过 TestClient 串真实 API 端到端验证全流程贯通
+  - TC-E2E-01 完整催收闭环：上传20条CSV(win_bid=today-8)→recalc→seed配置→跑批生成20(HIGH档7天时点)→分配20→collector1工作台→任务详情(订单+特征)→推荐话术(ANY兜底)→AI生成(mock非空)→claim→回填PAID(DONE)→日大盘paid_count=1/processed=1/rate=1.0
+  - TC-E2E-02 高风险多轮：service层run_batch注入today推进：第7天FIRST(day_offset=7)→PROMISE改期回PENDING→第15天SECOND(day_offset=15，幂等FIRST仍在)→回填DISPUTE(DONE)
+  - TC-E2E-03 已支付不催收：CSV上传→recalc→标记pay_status=PAID→跑批generated=0→多日跑批始终0任务
+  - `e:/tmp/verify_e2e.py`（新）：真实数据 E2E 联调脚本（dev.db+真实uvicorn），订单号带时间戳秒数避免去重
+- 运行过的验证：
+  - `pytest tests/test_e2e.py -q` → 3 passed
+  - `pytest -q` 全量 → 152 passed（149 旧 + 3 新，无回归）
+  - `npm run build` → ✓（无前端改动，回归确认）
+  - 真实数据 E2E 联调（/e/tmp/verify_e2e.py）：上传5条→recalc→AI设mock→跑批5(HIGH)→分配5→collector1 PENDING→详情→推荐2模板→AI生成fallback=False→回填PAID DONE→日大盘paid=3/processed=3/rate=1.0/unpaid=35 ✅ 全流程贯通
+- 已记录证据：见 feature_list.json e2e-001.evidence
+- 已知风险或未解决问题：
+  - TC-E2E-01 构造特征使 mock 概率≥70→HIGH 档（特征值需精确控制，非通用 CSV）；真实 CSV 数据档位分布由 mock 公式决定（HIGH/MEDIUM/LOW 混合）
+  - TC-E2E-02 用 service 层 run_batch(db,today=...) 注入时间推进（API 不接受 today 注入，时点控制必须经 service 层）
+  - AI 话术在内存测试用 db 直接插 ai_config(mock,enabled=True) 避免触网；真实联调用 PUT /api/config/ai 设 mock
+  - dev.db 现有多笔测试回填 PAID（本地数据，不影响仓库）
+  - 真实 LLM 调 tianqu.yzw.cn 超时仍待用户确认 base_url 可达性（非 MVP 阻塞项）
+- 下一步最佳动作：**MVP 验收完成**。后续可考虑：真实 LLM 调通（用户确认 base_url）、PG 时区统一、前端 code-split 优化主 chunk、真实算法替换 MockRiskProvider（需时间切割防泄漏）、主管手动改派（F-TASK-04 P1）

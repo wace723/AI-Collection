@@ -304,14 +304,22 @@
       "title": "端到端完整闭环验证",
       "description": "上传→算风险→跑批→分配→催收→话术→回填→大盘 全流程贯通。",
       "dependencies": ["wb-001", "talk-002", "dash-001"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "TC-E2E-01 完整催收闭环通过",
         "TC-E2E-02 高风险多轮催收闭环通过",
         "TC-E2E-03 已支付订单全程不催收通过"
       ],
-      "evidence": [],
-      "notes": "MVP 验收的最后关卡。"
+      "evidence": [
+        "pytest tests/test_e2e.py -q → 3 passed（TC-E2E-01/02/03）",
+        "pytest -q 全量 → 152 passed（149 旧 + 3 新，无回归）",
+        "TC-E2E-01：TestClient 串真实 API 全流程——上传20条CSV→recalc→seed配置→跑批生成20(HIGH档7天时点)→分配20→collector1工作台→任务详情(订单+特征)→推荐话术(ANY兜底)→AI生成(mock非空enabled=True)→claim→回填PAID(DONE)→日大盘paid_count=1/processed=1/rate=1.0/unpaid_total=20",
+        "TC-E2E-02：多轮催收——service层run_batch注入today推进时间：第7天跑批生成FIRST(day_offset=7)→claim→PROMISE改期回PENDING→第15天跑批生成SECOND(day_offset=15，幂等FIRST仍在)→claim→回填DISPUTE(DONE终态)",
+        "TC-E2E-03：已支付订单——CSV上传→recalc→手动标记pay_status=PAID→跑批generated=0→多日跑批(today+1/7/15/30)始终0任务",
+        "真实数据 E2E 联调（/e/tmp/verify_e2e.py，dev.db+真实uvicorn）：上传5条→recalc→AI设mock→跑批5(HIGH)→分配5→collector1 PENDING→详情→推荐2模板→AI生成fallback=False→回填PAID DONE→日大盘paid=3/processed=3/rate=1.0/unpaid=35 ✅ 全流程贯通",
+        "npm run build ✓（无前端改动，回归确认）"
+      ],
+      "notes": "TC-E2E-01 构造特征使 mock 概率≥70→HIGH 档（缴费历时长+订单数少+中标率低+活跃度低+非会员），win_bid=today-8 使 HIGH 档 7 天时点已到生成 FIRST。TC-E2E-02 用 service 层 run_batch(db,today=...) 注入时间推进（API 不接受 today 注入，时点控制必须经 service 层）。AI 话术在内存测试用 db 直接插 ai_config(mock,enabled=True) 避免触网；真实联调用 PUT /api/config/ai 设 mock。verify_e2e.py 订单号带时间戳秒数避免重跑去重。MVP 验收完成：催收闭环（生成→分配→催收→回填→话术）+ 数据大盘 + 端到端验证全通。"
     }
   ]
 }
