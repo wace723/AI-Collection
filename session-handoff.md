@@ -2,84 +2,81 @@
 
 > 会话间快速交接用。详细进度见 `claude-progress.md`，功能状态见 `feature_list.json`。
 > 本仓库由 Claude Code（`CLAUDE.md`）与 CodeBuddy（`CODEBUDDY.md`）共用同一套 harness 工件开发。
+> AI 功能参考 agent-app-builder 技能方法论（控制权光谱→代码为主 LLM 辅助；纵深安全多道防线）。
 
 ## 当前已验证
 
-- 现在明确可用的部分：infra-001/002、data-001、risk-001/002、task-001/002、wb-001、**talk-001 基础话术模板匹配**
-- 这轮实际跑过的验证（Session 010 / CodeBuddy）：
-  - 后端 pytest 全量 **119 passed**（…+ 21 talk）
-  - 真实数据 E2E：dev.db seed 6 模板 → task1（HIGH/FIRST/账龄>90）回退 ANY×ANY×ANY×ANY 兜底，变量已填充无残留
-  - 前端 Workbench 详情抽屉接入「推荐话术」区（主推+候选折叠）；npm run build 通过
+- 现在明确可用的部分：infra-001/002、data-001、risk-001/002、task-001/002、wb-001、talk-001、**talk-002 AI 话术生成**
+- 这轮实际跑过的验证（Session 011 / CodeBuddy）：
+  - 后端 pytest 全量 **137 passed**（…+ 18 talk_ai）
+  - 修复 BACKEND_DIR bug：.env 现正确加载（LLM_API_KEY/BASE_URL/MODEL 入 settings）
+  - 真实 LLM 配置已注入 ai_config DB（provider=openai_compatible, enabled=True, key/base/model 齐全）；调 tianqu.yzw.cn ReadTimeout → 降级模板正常（设计约束#2）
+  - 前端 AIConfigPanel（配置后台）+ Workbench 详情 AI 生成/反馈按钮；npm run build 通过
 
-## 本轮改动（talk-001）
+## 本轮改动（talk-002）
 
 - 后端：
-  - `services/talk_engine/matcher.py`：`map_age_bucket`（5 段边界）+ `derive_user_tag`（MEMBER）+ `match_templates`（4 维打分，ANY 兜底，总分降序）
-  - `services/talk_engine/renderer.py`：`render`（7 占位符替换）
-  - `services/talk_engine/recommend.py`：`recommend_talks` 编排
-  - `api/talk.py`：GET `/api/talk/recommend?task_id=`（COLLECTOR 仅自己任务）
-  - `schemas/talk.py`：TalkTemplateOut / TalkRecommendOut
-  - `seed.py`：`seed_default_talk_templates`（6 条，幂等按 name）
-- 前端：`api/talk.ts` + `types/api.ts`（TalkRecommend）+ Workbench 详情话术区
-- 测试 `tests/test_talk.py` 21 用例
+  - **修复 config.py BACKEND_DIR**（.parent.parent→三层）——infra-001 起的遗留 bug，.env 从未加载
+  - `models/ai_config.py`（新）+ 迁移 `d5e3a1b2c4f6`：AI 配置单行表
+  - `services/talk_engine/ai_config_service.py`：DB 优先 / .env 回退 + 脱敏 + 空 key 保留旧
+  - `services/talk_engine/llm_provider.py`：LLMProvider ABC + Mock + OpenAICompatible（httpx）
+  - `services/talk_engine/generator.py`：generate_talk（生成→**合规校验**→写 AIConversation→降级）+ feedback
+  - `api/config.py`：GET/PUT `/api/config/ai`（SUPERVISOR/ADMIN）；`api/talk.py`：POST `/api/talk/generate`、`/api/talk/feedback`
+  - `seed.py`：seed_ai_config（有 key→真实 LLM 启用）
+- 前端：`AIConfigPanel.tsx` + `api/config.ts`/`api/talk.ts` + Workbench AI 生成/反馈
+- 测试 `tests/test_talk_ai.py` 18 用例（含 monkeypatch 合规校验）
 
 ## 仍损坏或未验证
 
 - 已知缺陷：无
-- 未验证路径：talk-002 及之后功能均 not_started
+- 未验证路径：dash-001 及之后功能均 not_started
 - 下一轮会话需要注意的风险：
   - SQLite BigInteger 自增 / StaticPool / vite IPv6 localhost（沿用记录）
   - 后端默认端口 8000
-  - 真实历史订单账龄普遍 >90 天（90_PLUS），默认模板对 HIGH/MEDIUM 90_PLUS 无精确匹配会回退 ANY 兜底（符合设计，可后续补精确模板）
-  - user_feature_tag 仅 MEMBER 一种；SMALL_FUND/VIP 等后续扩展
-  - 工作台话术区只展示模板话术，AI 生成（talk-002）未做
-  - 话术模板管理 UI 未做（仅 seed 默认）
-  - dev.db 现 seed 了 6 条话术模板 + 30 条已分配任务（本地数据，不影响仓库）
-  - 若用户在浏览器测试话术，需重启后端（旧 uvicorn 未加载 talk 路由）
+  - **真实 LLM 调 tianqu.yzw.cn 超时**（疑似内部服务需内网/VPN）→ 降级模板工作；用户需确认 base_url 可达性，可在前端「配置后台 → AI 话术配置」改 base_url/model/provider 或切 mock
+  - api_key 明文存 DB（MVP，生产应加密）
+  - 合规校验为关键词法（可误杀/漏判，生产可换分类模型）
+  - dev.db 现 ai_config 启用真实 LLM（但调用超时降级）+ 30 已分配任务 + 6 话术模板（本地数据，不影响仓库）
+  - 若在浏览器测试 AI 生成，需重启后端（旧 uvicorn 未加载 talk-002 路由 + BACKEND_DIR 修复）
 
 ## 下一步最佳动作
 
-- 最高优先级未完成功能：`talk-002` AI 话术生成（LLM Provider 抽象 + mock + 降级）
-- 为什么它是下一步：talk-001 已提供模板话术，但催收员需要 AI 个性化增强话术；talk-002 补齐 LLM 抽象（mock/claude/openai）+ 生成接口 + 失败降级到模板，闭环里"话术辅助"完整
-- 什么结果才算 passing（对应 docs/03 TC-TALK-05~10）：
-  - AI 话术生成 mock 返回非空（TC-TALK-05）
-  - 真实 LLM 可选（TC-TALK-06，需 key）
-  - ai_talk_enabled 开关（TC-TALK-07）
-  - LLM 失败降级模板（TC-TALK-08，不阻断催收）
-  - 话术反馈 useful/useless 记录（TC-TALK-09）
-  - 合规无违规（TC-TALK-10）
+- 最高优先级未完成功能：`dash-001` 数据大盘（日/周/月指标聚合）
+- 为什么它是下一步：催收闭环（生成→分配→催收→回填→话术）已全通，数据大盘是最后一环，让主管看整体态势（欠费率/回款率/任务完成率/风险档分布）
+- 什么结果才算 passing（对应 docs/03 TC-DASH 系列）：
+  - 日大盘核心指标聚合（欠费金额/回款数/任务完成率/在催任务数）
+  - 风险档分布（HIGH/MEDIUM/LOW 任务数）
+  - 催收员负载分布
+  - 周/月趋势
 - 这一步中哪些东西不要动：
-  - talk-001 的 match_templates/render/recommend_talks 契约
-  - TalkTemplate/AIConversation 模型
-  - task_engine 全套 + wb-001 前端
-  - RiskProvider/config_service 等 risk 部分
-  - CLAUDE.md / CODEBUDDY.md 的设计约束（AI 话术失败必须降级模板）
+  - task_engine/talk_engine 全套契约
+  - Order/Task/TaskResult/AIConversation 模型
+  - CLAUDE.md / CODEBUDDY.md 的设计约束
 
-## talk-002 实现要点（给新会话的提示）
+## dash-001 实现要点（给新会话的提示）
 
 - 复用：
-  - `AIConversation` 模型（task_id/order_id/prompt/response/provider/feedback，infra-001 已建表）
-  - `recommend_talks`（talk-001，作模板兜底）
-  - `Task`/`Order`/`OrderFeature`
+  - `Order`（pay_status/risk_tier/win_bid_date）、`Task`（status/assignee_id/result）、`TaskResult`（result/collector_id）
+  - `require_role`、`APIResponse[T]`
 - 新建：
-  - `services/talk_engine/llm_provider.py`：`LLMProvider` 抽象 + `MockLLMProvider` + `ClaudeProvider`/`OpenAIProvider` 占位（按 settings 注入）
-  - `services/talk_engine/generator.py`：`generate_talk(db, task, template_hint)` → 调 provider + 写 AIConversation + 失败降级
-  - `api/talk.py`：追加 POST `/api/talk/generate`（task_id）、POST `/api/talk/feedback`
-  - `core/config.py`：`AI_TALK_ENABLED` 开关、`LLM_PROVIDER`（mock/claude/openai）
-  - 前端 Workbench 详情加「AI 生成」按钮 + 反馈
-- 参考 docs/02 §4.3.3 LLM Provider 抽象、docs/03 TC-TALK-05~10
-- 设计约束 #2：AI 话术失败必须回退模板，不阻断催收
+  - `services/dashboard/metrics.py`：`daily_metrics(db, date)` / `weekly` / `monthly` 聚合查询
+  - `api/dashboard.py`：GET `/api/dashboard/daily`、`/weekly`、`/monthly`（SUPERVISOR/ADMIN）
+  - `schemas/dashboard.py`：DashboardOut（核心指标 + 分布）
+  - 前端 `pages/Dashboard/index.tsx`（替换占位）：卡片指标 + 风险档饼图 + 催收员负载柱图（@ant-design/charts 或简单 Table）
+- 参考 docs/02 §5.6 大盘 API、docs/03 TC-DASH 系列、docs/01 §4.7 大盘指标
 
 ## 命令
 
 - 启动命令：`./init.sh`（bash；PowerShell 下 `bash ./init.sh` 或按 CODEBUDDY.md 分步命令）
 - 验证命令：后端 `cd backend && .venv\Scripts\python.exe -m pytest -q`；前端 `cd frontend && npm run build`
-- 种子数据：`cd backend && .\.venv\Scripts\Activate.ps1 && python seed.py`（用户 + 风险档配置 v1 + 6 条话术模板）
+- 种子数据：`cd backend && .\.venv\Scripts\Activate.ps1 && python seed.py`（用户 + 风险档配置 + 6 话术模板 + AI 配置）
 - 启动后端：`uvicorn app.main:app --reload --port 8000`（localhost 访问）
 - 启动前端：`npm run dev`（5173，localhost 访问）
 - 默认账号：admin/supervisor/collector1-3，密码 admin123
 - 关键接口：
-  - 任务列表/详情/领取/回填：`GET/POST /api/tasks...`
-  - 手动跑批/分配：`POST /api/tasks/batch/run`、`POST /api/tasks/assign/run`（ADMIN）
-  - 推荐话术：`GET /api/talk/recommend?task_id=`（登录，COLLECTOR 仅自己任务）
-  - （AI 待建）`POST /api/talk/generate`、`POST /api/talk/feedback`
+  - 任务：`GET /api/tasks`、`POST /api/tasks/{id}/claim`、`POST /api/tasks/{id}/result`
+  - 话术：`GET /api/talk/recommend?task_id=`、`POST /api/talk/generate?task_id=`、`POST /api/talk/feedback`
+  - AI 配置：`GET/PUT /api/config/ai`（SUPERVISOR/ADMIN）
+  - 风险配置：`GET/PUT /api/config/risk/...`
+  - 跑批/分配：`POST /api/tasks/batch/run`、`POST /api/tasks/assign/run`（ADMIN）
+  - （大盘待建）`GET /api/dashboard/daily` 等

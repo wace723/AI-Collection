@@ -1,6 +1,8 @@
-"""talk-001 话术推荐路由。
+"""talk-001/002 话术推荐与 AI 生成路由。
 
-GET /api/talk/recommend?task_id= —— 推荐基础话术（登录可见，COLLECTOR 仅自己任务）
+GET  /api/talk/recommend?task_id= —— 推荐基础话术（登录，COLLECTOR 仅自己任务）
+POST /api/talk/generate          —— AI 生成话术（同上）
+POST /api/talk/feedback          —— 话术反馈
 """
 
 from __future__ import annotations
@@ -14,8 +16,15 @@ from app.core.deps import get_current_user, get_db
 from app.models.task import Task
 from app.models.user import User
 from app.schemas.common import APIResponse
-from app.schemas.talk import TalkRecommendOut, TalkTemplateOut
+from app.schemas.talk import (
+    FeedbackIn,
+    FeedbackOut,
+    GenerateTalkOut,
+    TalkRecommendOut,
+    TalkTemplateOut,
+)
 from app.services.talk_engine import recommend_talks
+from app.services.talk_engine.generator import generate_talk, update_feedback
 from app.services.talk_engine.matcher import derive_user_tag, map_age_bucket
 
 router = APIRouter()
@@ -65,5 +74,54 @@ def recommend(
                 )
                 for r in recs
             ],
+        )
+    )
+
+
+def _check_task_access(db: Session, task_id: int, user: User) -> Task:
+    """取任务并校验：COLLECTOR 只能操作自己的任务。"""
+    task = db.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"任务 {task_id} 不存在")
+    if user.role == "COLLECTOR" and task.assignee_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "无权操作他人任务")
+    return task
+
+
+@router.post("/generate", response_model=APIResponse[GenerateTalkOut])
+def generate(
+    task_id: int = Query(..., description="任务 ID"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> APIResponse[GenerateTalkOut]:
+    """AI 生成话术（COLLECTOR 仅自己任务）。失败降级模板，不阻断。"""
+    task = _check_task_access(db, task_id, current_user)
+    result = generate_talk(db, task)
+    return APIResponse(
+        data=GenerateTalkOut(
+            enabled=result.enabled,
+            content=result.content,
+            conversation_id=result.conversation_id,
+            provider=result.provider,
+            fallback=result.fallback,
+            fallback_reason=result.fallback_reason,
+        )
+    )
+
+
+@router.post("/feedback", response_model=APIResponse[FeedbackOut])
+def feedback(
+    payload: FeedbackIn,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(get_current_user),
+) -> APIResponse[FeedbackOut]:
+    """话术反馈 useful/useless（TC-TALK-09）。"""
+    try:
+        conv = update_feedback(db, payload.conversation_id, payload.feedback)
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    return APIResponse(
+        data=FeedbackOut(
+            conversation_id=conv.id, feedback=conv.feedback or ""
         )
     )

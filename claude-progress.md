@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`（骨架就绪后）
-- 当前最高优先级未完成功能：`talk-002` AI 话术生成（LLM Provider 抽象 + mock + 降级）
-- 当前 blocker：无（talk-001 已 passing，话术模板匹配+变量填充+前端展示闭环可用）
+- 当前最高优先级未完成功能：`dash-001` 数据大盘（日/周/月指标聚合）
+- 当前 blocker：无（talk-002 已 passing，AI 话术生成+配置+降级+合规闭环可用；真实 LLM 调通待用户确认 base_url 可达性）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -289,3 +289,35 @@
   - AI 话术生成（talk-002）未做，工作台无 AI 生成按钮
   - 话术模板管理 UI 未做（仅 seed 默认）
 - 下一步最佳动作：开始 `talk-002` AI 话术生成（LLMProvider 抽象 + MockLLM + POST /api/talk/generate + 开关 + 降级）
+
+### Session 011（CodeBuddy）
+
+- 日期：2026-09-09 ~ 2026-09-10
+- 本轮目标：完成 `talk-002` AI 话术生成（LLM Provider + 前端可配 apikey/baseurl/model + 降级 + 合规）
+- 参考技能：agent-app-builder（控制权光谱→"代码为主 LLM 单点辅助"，裁剪掉工具架构/WS/自主循环；采用原则6 纵深安全→输出合规校验第二道防线）
+- 已完成：
+  - **修复 BACKEND_DIR bug**（`.parent.parent`→`.parent.parent.parent`）：infra-001 起 .env 从未被加载（DATABASE_URL 靠默认值巧合正确），现 LLM_API_KEY/BASE_URL/MODEL 正确读入 settings
+  - `models/ai_config.py`（新）+ 迁移 `d5e3a1b2c4f6`：ai_config 单行表（id=1）
+  - `services/talk_engine/ai_config_service.py`：`get_effective_ai_config`（DB 优先、.env 回退）+ `update_ai_config`（空 key 保留旧值）+ `mask_api_key`
+  - `services/talk_engine/llm_provider.py`：`LLMProvider` ABC + `MockLLMProvider` + `OpenAICompatibleProvider`（httpx /chat/completions，OpenAI 兼容协议，不绑死供应商）
+  - `services/talk_engine/generator.py`：`generate_talk`（取配置→build_prompt→调 provider→**合规校验**→写 AIConversation→失败降级模板）+ `update_feedback`
+  - `api/config.py`：GET/PUT `/api/config/ai`（SUPERVISOR/ADMIN，api_key 脱敏）
+  - `api/talk.py`：POST `/api/talk/generate`、POST `/api/talk/feedback`
+  - `schemas/config.py`：AIConfigOut/AIConfigUpdateIn；`schemas/talk.py`：GenerateTalkOut/FeedbackIn/FeedbackOut
+  - `seed.py`：`seed_ai_config`（有 key→openai_compatible+enabled，无→mock+False）
+  - 前端 `AIConfigPanel`（provider/apikey/baseurl/model/enabled）+ Workbench 详情 AI 生成按钮 + 反馈按钮
+  - 测试 `tests/test_talk_ai.py` 18 用例（含 monkeypatch 合规校验）
+- 运行过的验证：
+  - `pytest tests/test_talk_ai.py -q` → 18 passed
+  - `pytest -q` 全量 → 137 passed（无回归）
+  - 真实 LLM E2E：.env 配置已注入 ai_config DB（key=tqsk-***, base=https://tianqu.yzw.cn/v1, model=glm-5.2, provider=openai_compatible, enabled=True）；调 tianqu.yzw.cn ReadTimeout（30s/60s）→ 降级模板正常（设计约束#2 生效）
+  - `npm run build` → ✓
+- 已记录证据：见 feature_list.json talk-002.evidence
+- 提交记录：`feat: talk-002 ai talk generation + frontend config (llm provider + fallback + compliance)`
+- 更新过的文件或工件：core/config.py（BACKEND_DIR 修复 + LLM_BASE_URL/MODEL/TIMEOUT）、models/ai_config.py、models/__init__.py、alembic/versions/d5e3a1b2c4f6（新）、services/talk_engine/ai_config_service.py、llm_provider.py、generator.py、__init__.py、api/config.py、api/talk.py、schemas/config.py、schemas/talk.py、seed.py、tests/test_talk_ai.py、frontend AIConfigPanel/config.ts/talk.ts/Workbench、feature_list.json、claude-progress.md、session-handoff.md
+- 已知风险或未解决问题：
+  - 真实 LLM 调 tianqu.yzw.cn 超时（疑似内部服务需内网/VPN，或响应慢）→ 降级模板工作；用户需确认 base_url 可达性
+  - api_key 明文存 DB（MVP，生产应加密）
+  - 合规校验为关键词法（可能误杀/漏判），生产可换分类模型
+  - TC-06 真实调通待网络环境确认
+- 下一步最佳动作：开始 `dash-001` 数据大盘（日/周/月指标聚合，依赖 task-002/talk-002 已有数据）

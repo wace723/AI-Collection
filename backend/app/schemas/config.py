@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -82,6 +83,32 @@ class RiskConfigUpdateIn(BaseModel):
         return self
 
 
+class AIConfigOut(BaseModel):
+    """AI 话术配置输出（api_key 脱敏）。"""
+
+    provider: str
+    api_key_masked: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    enabled: bool
+    from_db: bool = False  # True=来自 DB，False=回退 .env
+    updated_at: datetime | None = None
+    updated_by: int | None = None
+
+
+class AIConfigUpdateIn(BaseModel):
+    """更新 AI 配置输入（主管/管理员）。
+
+    api_key 传空/None 时保留旧值（前端脱敏展示后不回填明文）。
+    """
+
+    provider: Literal["mock", "openai_compatible"] = "mock"
+    api_key: str | None = None
+    base_url: str | None = None
+    model: str | None = None
+    enabled: bool = False
+
+
 __all__ = [
     "RiskTierEnum",
     "SceneEnum",
@@ -89,4 +116,6 @@ __all__ = [
     "RiskConfigOut",
     "ScheduleIn",
     "RiskConfigUpdateIn",
+    "AIConfigOut",
+    "AIConfigUpdateIn",
 ]

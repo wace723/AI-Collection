@@ -1,5 +1,7 @@
 import client from './client'
 import type {
+  AIConfig,
+  AIConfigUpdate,
   APIResponse,
   RiskConfig,
   RiskConfigUpdate,
@@ -34,4 +36,18 @@ export async function rollbackRisk(version: number): Promise<RiskConfig> {
     `/config/risk/rollback/${version}`,
   )
   return res.data.data as RiskConfig
+}
+
+/** 当前 AI 话术配置（api_key 脱敏，主管/管理员可查） */
+export async function getAIConfig(): Promise<AIConfig> {
+  const res = await client.get<APIResponse<AIConfig>>('/config/ai')
+  return res.data.data as AIConfig
+}
+
+/** 更新 AI 话术配置（主管/管理员；api_key 空则保留旧值） */
+export async function updateAIConfig(
+  payload: AIConfigUpdate,
+): Promise<AIConfig> {
+  const res = await client.put<APIResponse<AIConfig>>('/config/ai', payload)
+  return res.data.data as AIConfig
 }

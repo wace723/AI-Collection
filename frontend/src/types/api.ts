@@ -247,3 +247,34 @@ export interface TalkRecommend {
   user_tag: string | null
   templates: TalkTemplateItem[]
 }
+
+/** AI 话术配置（api_key 脱敏） */
+export interface AIConfig {
+  provider: string
+  api_key_masked: string | null
+  base_url: string | null
+  model: string | null
+  enabled: boolean
+  from_db: boolean
+  updated_at: string | null
+  updated_by: number | null
+}
+
+/** AI 配置更新入参（api_key 空则保留旧值） */
+export interface AIConfigUpdate {
+  provider: 'mock' | 'openai_compatible'
+  api_key?: string
+  base_url?: string
+  model?: string
+  enabled: boolean
+}
+
+/** AI 话术生成响应 */
+export interface GenerateTalk {
+  enabled: boolean
+  content: string | null
+  conversation_id: number | null
+  provider: string
+  fallback: boolean
+  fallback_reason: string | null
+}

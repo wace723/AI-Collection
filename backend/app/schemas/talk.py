@@ -1,6 +1,8 @@
-"""话术相关 schema（talk-001）。"""
+"""话术相关 schema（talk-001/002）。"""
 
 from __future__ import annotations
+
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -27,4 +29,35 @@ class TalkRecommendOut(BaseModel):
     templates: list[TalkTemplateOut]
 
 
-__all__ = ["TalkTemplateOut", "TalkRecommendOut"]
+class GenerateTalkOut(BaseModel):
+    """AI 话术生成响应。"""
+
+    enabled: bool
+    content: str | None
+    conversation_id: int | None
+    provider: str
+    fallback: bool
+    fallback_reason: str | None = None
+
+
+class FeedbackIn(BaseModel):
+    """话术反馈入参。"""
+
+    conversation_id: int
+    feedback: Literal["useful", "useless"]
+
+
+class FeedbackOut(BaseModel):
+    """话术反馈响应。"""
+
+    conversation_id: int
+    feedback: str
+
+
+__all__ = [
+    "TalkTemplateOut",
+    "TalkRecommendOut",
+    "GenerateTalkOut",
+    "FeedbackIn",
+    "FeedbackOut",
+]

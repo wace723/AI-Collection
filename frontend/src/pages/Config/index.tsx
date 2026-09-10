@@ -6,6 +6,7 @@ import { uploadCsv } from '../../api/data'
 import { getMe } from '../../api/auth'
 import type { UploadSummary } from '../../types/api'
 import RiskConfigPanel from './RiskConfigPanel'
+import AIConfigPanel from './AIConfigPanel'
 
 const { Dragger } = Upload
 
@@ -114,6 +115,8 @@ export default function Config() {
       </Card>
 
       <RiskConfigPanel />
+
+      <AIConfigPanel />
     </>
   )
 }

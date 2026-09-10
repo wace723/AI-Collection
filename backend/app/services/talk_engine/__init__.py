@@ -7,6 +7,14 @@
 AI 生成（talk-002）后续追加 LLM Provider 分支。
 """
 
+from app.services.talk_engine.ai_config_service import (
+    EffectiveAIConfig,
+    get_ai_config_row,
+    get_effective_ai_config,
+    mask_api_key,
+    update_ai_config,
+)
+from app.services.talk_engine.generator import GenerateTalkResult, generate_talk
 from app.services.talk_engine.matcher import (
     AGE_BUCKETS,
     ANY,
@@ -26,4 +34,11 @@ __all__ = [
     "render",
     "RecommendedTalk",
     "recommend_talks",
+    "EffectiveAIConfig",
+    "get_ai_config_row",
+    "get_effective_ai_config",
+    "mask_api_key",
+    "update_ai_config",
+    "GenerateTalkResult",
+    "generate_talk",
 ]

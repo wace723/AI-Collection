@@ -4,6 +4,7 @@
 （否则检测不到表，生成空迁移）。
 """
 
+from app.models.ai_config import AIConfig
 from app.models.base import Base, CreatedAtMixin, TimestampMixin
 from app.models.order import Order, OrderFeature
 from app.models.risk import CollectionSchedule, RiskConfig
@@ -24,4 +25,5 @@ __all__ = [
     "User",
     "TalkTemplate",
     "AIConversation",
+    "AIConfig",
 ]

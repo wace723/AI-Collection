@@ -251,7 +251,7 @@
       "title": "AI 智能话术生成（LLM Provider + 降级）",
       "description": "LLMProvider 抽象（Claude/OpenAI/Mock）；AI 生成话术；开关控制；失败降级模板；反馈记录。",
       "dependencies": ["talk-001"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "mock LLM 生成非空话术（对应 TC-TALK-05）",
         "真实 LLM 生成合规话术（对应 TC-TALK-06，需 key）",
@@ -260,8 +260,17 @@
         "反馈记录（对应 TC-TALK-09）",
         "话术无违规内容（对应 TC-TALK-10）"
       ],
-      "evidence": [],
-      "notes": "MVP 可用 mock LLM，预留真实 Provider。"
+      "evidence": [
+        "pytest tests/test_talk_ai.py -q → 18 passed（TC-TALK-05/07/08/09/10 + AI 配置 API GET/PUT + generate/feedback API + 权限 403/404 + 合规校验 monkeypatch）",
+        "pytest -q 全量 → 137 passed（119 旧 + 18 新，无回归）",
+        "修复 BACKEND_DIR 计算 bug（.parent.parent→.parent.parent.parent）：此前 .env 从未被加载，现在 LLM_API_KEY/BASE_URL/MODEL 正确读入 settings",
+        "ai_config 表 + 迁移 d5e3a1b2c4f6；seed_ai_config 用 .env 默认值（有 key → provider=openai_compatible+enabled=True；无 key → mock+False）",
+        "AI 配置 API：GET/PUT /api/config/ai（SUPERVISOR/ADMIN），api_key 脱敏返回，空 key 保留旧值；DB 优先、.env 回退（get_effective_ai_config）",
+        "LLMProvider 抽象（MockLLMProvider + OpenAICompatibleProvider）+ generator（生成→合规校验→写 AIConversation→失败降级模板）；纵深安全=system prompt 约束 + 超时 + 输出合规校验第二道防线",
+        "前端 AIConfigPanel（provider/apikey/baseurl/model/enabled）+ Workbench 详情 AI 生成按钮 + 反馈；npm run build ✓",
+        "真实 LLM 路径代码就绪且配置已注入（key/base/model 从 .env→ai_config DB），本机调 https://tianqu.yzw.cn/v1 ReadTimeout（30s/60s），降级模板正常工作；TC-06 真实调通待用户确认 base_url 可达性（疑似内部服务需内网）"
+      ],
+      "notes": "控制权=代码为主 LLM 单点辅助（非工具驱动自主循环，按 agent-app-builder 技能裁剪掉工具架构/WS/对话历史裁剪）。纵深安全多道防线：system prompt 合规约束 + LLM_TIMEOUT + 输出 is_compliant 校验（威胁/辱骂/虚假承诺关键词）+ 降级模板 + AIConversation 审计。api_key 明文存 DB（MVP，生产应加密）。参考 agent-app-builder 技能方法论。"
     },
     {
       "id": "dash-001",

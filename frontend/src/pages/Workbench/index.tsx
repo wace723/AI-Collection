@@ -26,8 +26,9 @@ import {
   listTasks,
   submitTaskResult,
 } from '../../api/tasks'
-import { getRecommendTalks } from '../../api/talk'
+import { getRecommendTalks, generateTalk, sendFeedback } from '../../api/talk'
 import type {
+  GenerateTalk,
   Task,
   TaskDetail,
   TaskResultInput,
@@ -100,6 +101,8 @@ export default function Workbench() {
   const [detail, setDetail] = useState<TaskDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [talk, setTalk] = useState<TalkRecommend | null>(null)
+  const [aiTalk, setAiTalk] = useState<GenerateTalk | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
 
   const [resultOpen, setResultOpen] = useState(false)
   const [resultTask, setResultTask] = useState<Task | null>(null)
@@ -162,6 +165,7 @@ export default function Workbench() {
     setDetailOpen(true)
     setDetail(null)
     setTalk(null)
+    setAiTalk(null)
     setDetailLoading(true)
     try {
       const d = await getTask(t.id)
@@ -171,6 +175,34 @@ export default function Workbench() {
       /* ignore */
     } finally {
       setDetailLoading(false)
+    }
+  }
+
+  const onGenerateAi = async (taskId: number) => {
+    setAiLoading(true)
+    setAiTalk(null)
+    try {
+      const data = await generateTalk(taskId)
+      setAiTalk(data)
+      if (data.fallback) {
+        message.warning(data.fallback_reason || 'AI 生成失败，已降级模板')
+      } else {
+        message.success('AI 话术已生成')
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  const onFeedback = async (conversationId: number | null, fb: 'useful' | 'useless') => {
+    if (!conversationId) return
+    try {
+      await sendFeedback(conversationId, fb)
+      message.success(`已标记 ${fb}`)
+    } catch {
+      /* ignore */
     }
   }
 
@@ -414,12 +446,21 @@ export default function Workbench() {
               size="small"
               style={{ marginTop: 16 }}
               extra={
-                talk ? (
-                  <Text type="secondary">
-                    账龄段 {talk.age_bucket}
-                    {talk.user_tag ? ` · ${talk.user_tag}` : ''}
-                  </Text>
-                ) : null
+                <Space>
+                  {talk ? (
+                    <Text type="secondary">
+                      账龄段 {talk.age_bucket}
+                      {talk.user_tag ? ` · ${talk.user_tag}` : ''}
+                    </Text>
+                  ) : null}
+                  <Button
+                    size="small"
+                    loading={aiLoading}
+                    onClick={() => onGenerateAi(detail.id)}
+                  >
+                    AI 生成
+                  </Button>
+                </Space>
               }
             >
               {talk && talk.templates.length > 0 ? (
@@ -448,6 +489,38 @@ export default function Workbench() {
                 </>
               ) : (
                 <Text type="secondary">暂无匹配话术模板</Text>
+              )}
+
+              {aiTalk && (
+                <div style={{ marginTop: 12, borderTop: '1px dashed #ddd', paddingTop: 8 }}>
+                  <Space style={{ marginBottom: 4 }}>
+                    <Tag color={aiTalk.fallback ? 'orange' : 'green'}>
+                      AI{aiTalk.fallback ? '（降级）' : ''}
+                    </Tag>
+                    <Text type="secondary">{aiTalk.provider}</Text>
+                    {aiTalk.conversation_id && (
+                      <>
+                        <Button
+                          size="small"
+                          type="link"
+                          onClick={() => onFeedback(aiTalk.conversation_id, 'useful')}
+                        >
+                          有用
+                        </Button>
+                        <Button
+                          size="small"
+                          type="link"
+                          onClick={() => onFeedback(aiTalk.conversation_id, 'useless')}
+                        >
+                          无用
+                        </Button>
+                      </>
+                    )}
+                  </Space>
+                  <Paragraph style={{ marginBottom: 0 }}>
+                    {aiTalk.content || '（无内容）'}
+                  </Paragraph>
+                </div>
               )}
             </Card>
           </>

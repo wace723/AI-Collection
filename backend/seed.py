@@ -5,8 +5,10 @@
 默认密码统一为 admin123，仅用于开发环境。
 """
 
+from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.security import hash_password
+from app.models.ai_config import AIConfig
 from app.models.talk import TalkTemplate
 from app.models.user import User
 from app.services.risk_engine.config_service import seed_default_config
@@ -91,6 +93,30 @@ def seed_default_talk_templates(db) -> int:
     return created
 
 
+def seed_ai_config(db) -> bool:
+    """首次用 .env 默认值初始化 AI 话术配置单行（id=1）。已存在则跳过。
+
+    若 .env 提供了 LLM_API_KEY（用户放了真实 key），默认 provider=openai_compatible
+    且 enabled=True（意图：放 key 即启用真实 LLM）；否则 mock/关闭。
+    用户可在前端「配置后台」运行时修改。
+    """
+    if db.get(AIConfig, 1) is not None:
+        return False
+    has_key = bool(settings.LLM_API_KEY)
+    db.add(
+        AIConfig(
+            id=1,
+            provider="openai_compatible" if has_key else settings.LLM_PROVIDER,
+            api_key=settings.LLM_API_KEY,
+            base_url=settings.LLM_BASE_URL,
+            model=settings.LLM_MODEL,
+            enabled=has_key or settings.AI_TALK_ENABLED,
+        )
+    )
+    db.commit()
+    return True
+
+
 def seed_users(db) -> tuple[list[str], list[str]]:
     """插入默认用户。返回 (created, skipped)。"""
     created: list[str] = []
@@ -135,6 +161,17 @@ def seed() -> None:
             print(f"  话术模板: 新建 {talk_created} 条（HIGH/MEDIUM/LOW + ANY 兜底）")
         else:
             print("  话术模板: 跳过(已存在)")
+
+        # AI 话术配置（从 .env 默认值初始化单行）
+        ai_created = seed_ai_config(db)
+        if ai_created:
+            print(
+                f"  AI 配置: 新建（provider={settings.LLM_PROVIDER}, "
+                f"model={settings.LLM_MODEL or '未设置'}, "
+                f"enabled={settings.AI_TALK_ENABLED}）"
+            )
+        else:
+            print("  AI 配置: 跳过(已存在)")
 
         print(f"  默认密码: {DEFAULT_PASSWORD}")
     finally:
