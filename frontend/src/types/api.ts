@@ -278,3 +278,64 @@ export interface GenerateTalk {
   fallback: boolean
   fallback_reason: string | null
 }
+
+// ── 数据大盘（dash-001） ─────────────────────────────────────────
+
+/** 周大盘趋势单日点 */
+export interface DailyTrendPoint {
+  date: string
+  new_tasks: number
+  completed: number
+  completion_rate: number
+  paid: number
+  processed: number
+  paid_rate: number
+}
+
+/** 催收员绩效 */
+export interface CollectorPerformance {
+  collector_id: number
+  username: string
+  display_name: string
+  paid_count: number
+}
+
+/** 日大盘 */
+export interface DailyDashboard {
+  date: string
+  new_tasks: number
+  new_tasks_by_tier: Record<string, number>
+  paid_count: number
+  processed_count: number
+  paid_rate: number
+  unpaid_total: number
+  risk_distribution: Record<string, number>
+  age_distribution: Record<string, number>
+}
+
+/** 周大盘 */
+export interface WeeklyDashboard {
+  week_start: string
+  week_end: string
+  trend: DailyTrendPoint[]
+  collector_ranking: CollectorPerformance[]
+}
+
+/** 单风险档催收效果 */
+export interface TierEffect {
+  risk_tier: string
+  processed: number
+  paid: number
+  paid_rate: number
+}
+
+/** 月大盘 */
+export interface MonthlyDashboard {
+  month_start: string
+  month_end: string
+  unpaid_rate: number
+  paid_count: number
+  processed_count: number
+  paid_rate: number
+  tier_effects: TierEffect[]
+}

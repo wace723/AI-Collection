@@ -1,6 +1,6 @@
 {
   "project": "平台使用费 AI 辅助催收系统",
-  "last_updated": "2026-09-09",
+  "last_updated": "2026-09-10",
   "rules": {
     "single_active_feature": true,
     "passing_requires_evidence": true,
@@ -279,14 +279,23 @@
       "title": "数据大盘（日/周/月核心指标）",
       "description": "日大盘（新增任务数、各档分布、回款数、回款率）；周/月趋势；风险/账龄分布。",
       "dependencies": ["task-002"],
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "日大盘指标与库统计一致（对应 TC-DASH-01）",
         "风险档分布统计正确（对应 TC-DASH-02）",
         "周大盘趋势返回（对应 TC-DASH-03）"
       ],
-      "evidence": [],
-      "notes": "ECharts 可视化。MVP 先放核心指标。"
+      "evidence": [
+        "pytest tests/test_dashboard.py -q → 12 passed（TC-DASH-01/02/03 + 空库不除零 + 月大盘冒烟 + 月大盘固定四档输出 + 同任务多次PAID distinct计 + 各档输出含NONE键 + 权限 collector 403/未登录 401/supervisor 200 + 周排名降序）",
+        "pytest -q 全量 → 149 passed（137 旧 + 12 新，无回归）",
+        "后端 services/dashboard/metrics.py：frozen dataclass（DailyMetrics/WeeklyMetrics/MonthlyMetrics 等）+ 三个聚合函数；未支付订单用 or_ 含 NULL（与 batch.py 一致）；回款用 TaskResult.result='PAID' + created_at 时间戳（非 Order.pay_status，因 submit_result 不更新 Order）；回款率分母=当日已处理任务数（distinct task_id 防重复），分母0→0.0；风险档 NULL→'NONE'、账龄 win_bid_date NULL→'UNKNOWN'（保证合计可断言）；账龄段复用 talk_engine.matcher.map_age_bucket",
+        "后端 api/dashboard.py：GET /api/dashboard/daily、/weekly、/monthly，均 require_role('SUPERVISOR','ADMIN')，APIResponse[T] 包裹；router.py 挂载 /dashboard",
+        "前端 @ant-design/charts v2.6.7（Pie/Column/Line）；lazy 加载 + Suspense 代码分割：图表库 es-*.js 单独成 chunk（2.2MB），主 chunk 基本未涨（1.36MB），DailyTab/WeeklyTab/MonthlyTab/Charts 各自独立 chunk",
+        "前端 Dashboard 页：角色判断（非 SUPERVISOR/ADMIN 显示权限不足）+ Tabs（日/周/月）；日大盘 4 Statistic 卡片 + 风险档/账龄分布 Pie；周大盘双折线（完成率/回款率趋势）+ 催收员绩效排名 Table；月大盘 3 卡片 + 各档催收效果柱图 + 明细表",
+        "npm run build → tsc + vite build 通过（5375 modules）",
+        "真实数据 E2E（dev.db 20 条未支付订单）：daily unpaid_total=20/risk HIGH=5/MEDIUM=12/LOW=3（与 risk-001 联调一致）/age 90_PLUS=20；回填 task5 result=PAID → daily paid_count=1/processed=1/rate=1.0，weekly ranking 显示回款1笔；权限 collector1→403"
+      ],
+      "notes": "回款语义：TaskResult.collector_id 记录的是回填操作者（含 ADMIN/SUPERVISOR 代理），非 task.assignee_id——符合 state.py 设计（主管可代理）。回款率口径=当日回款数/当日已处理任务数（非新增任务数），分子分母均用 distinct task_id（口径一致，回款率不超 100%）。账龄分布真实数据普遍 90_PLUS（历史订单，沿用 talk-001 记录）。时区：API 层用 datetime.now(UTC).date() 对齐 TaskResult.created_at（utcnow）；测试用 date.today() 动态对齐 + created_at 显式注入。图表库 lazy 代码分割，未恶化首屏主 chunk。经 code-reviewer 审查后修复：paid_count 改 distinct（H-1 回款率防超 100%）、月大盘 tier_effects 固定输出四档含 NONE（S-1）、new_tasks_by_tier 含 NONE 键（S-2，Task.risk_tier NOT NULL 使 NONE 恒 0）、_rate 注释修正、前端 MonthlyTab tierLabel 补 NONE、WeeklyTab 移除前端 sorter（避免与后端排序冲突）、Dashboard 区分 getMe 失败与权限不足。未修（记录留优化）：PG 时区边界（H-2，MVP 用 SQLite naive UTC 语义一致，PG 上线统一处理）、周趋势 28 次 N+1 查询（M-1，大盘低频）、未支付订单全表加载（M-4）、unpaid_rate 分母含全部历史订单（L-3，docs 未精确定义月度欠费率分母，当前口径合理）。"
     },
     {
       "id": "e2e-001",

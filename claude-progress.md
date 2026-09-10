@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`（骨架就绪后）
-- 当前最高优先级未完成功能：`dash-001` 数据大盘（日/周/月指标聚合）
-- 当前 blocker：无（talk-002 已 passing，AI 话术生成+配置+降级+合规闭环可用；真实 LLM 调通待用户确认 base_url 可达性）
+- 当前最高优先级未完成功能：`e2e-001` 端到端完整闭环验证（dash-001 已 passing）
+- 当前 blocker：无（dash-001 数据大盘已 passing；真实 LLM 调通仍待用户确认 base_url 可达性）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -321,3 +321,31 @@
   - 合规校验为关键词法（可能误杀/漏判），生产可换分类模型
   - TC-06 真实调通待网络环境确认
 - 下一步最佳动作：开始 `dash-001` 数据大盘（日/周/月指标聚合，依赖 task-002/talk-002 已有数据）
+
+### Session 012
+
+- 日期：2026-09-10
+- 本轮目标：完成 `dash-001` 数据大盘（日/周/月核心指标 + 前端可视化）
+- 工具：Claude Code（按固定工作循环：读状态→init.sh 验证基线→读 docs+模型→plan→实现→验证）
+- 已完成：
+  - `services/dashboard/metrics.py`（新）：frozen dataclass（DailyMetrics/DailyTrendPoint/CollectorPerformance/WeeklyMetrics/TierEffect/MonthlyMetrics）+ 三聚合函数（get_daily/weekly/monthly_metrics）；未支付订单 or_ 含 NULL（与 batch.py 一致）；回款用 TaskResult.result='PAID'+created_at 时间戳（非 Order.pay_status，因 submit_result 不更新 Order）；回款率分母=当日已处理 distinct task_id，分母0→0.0；风险档 NULL→NONE、账龄 win_bid_date NULL→UNKNOWN；账龄段复用 talk_engine.matcher.map_age_bucket（Python 端遍历，规避 SQL case else_ 坑）
+  - `services/dashboard/__init__.py`：导出稳定入口
+  - `schemas/dashboard.py`（新）：DailyDashboardOut/DailyTrendPointOut/CollectorPerformanceOut/WeeklyDashboardOut/TierEffectOut/MonthlyDashboardOut
+  - `api/dashboard.py`（新）：GET /api/dashboard/daily、/weekly、/monthly，均 require_role('SUPERVISOR','ADMIN')，APIResponse[T] 包裹；API 层 today 用 datetime.now(UTC).date() 对齐 TaskResult.created_at 的 UTC 语义
+  - `api/router.py`：挂载 /dashboard
+  - `tests/test_dashboard.py`（新）：12 用例（TC-DASH-01/02/03 + 空库不除零 + 月大盘冒烟 + 月大盘固定四档输出 + 同任务多次PAID distinct + 各档输出含NONE键 + 权限 collector 403/未登录 401/supervisor 200 + 周排名降序）；测试日期全用 date.today() 动态对齐 + created_at 显式注入
+  - 前端：npm install @ant-design/charts v2.6.7；`components/Charts.tsx`（lazy 加载 Pie/Column/Line + Suspense）；`api/dashboard.ts` + types/api.ts 追加大盘类型；`pages/Dashboard/`（index.tsx 主页 + DailyTab/WeeklyTab/MonthlyTab 三子组件，均 lazy）
+- 运行过的验证：
+  - `pytest tests/test_dashboard.py -q` → 12 passed
+  - `pytest -q` 全量 → 149 passed（137 旧 + 12 新，无回归）
+  - `npm run build` → tsc + vite build 通过（5375 modules）；代码分割生效：图表库 es-*.js 单独成 chunk（2.2MB），主 chunk 基本未涨（1.36MB），Tabs/Charts 各自独立 chunk
+  - 真实数据 E2E（dev.db 20 条未支付订单）：daily unpaid_total=20/risk HIGH=5/MEDIUM=12/LOW=3（与 risk-001 联调一致）/age 90_PLUS=20；回填 task5 result=PAID → daily paid_count=1/processed=1/rate=1.0，weekly ranking 显示回款1笔；权限 collector1→403
+  - code-reviewer agent 审查后修复：paid_count 改 distinct（回款率防超100%）、月大盘 tier_effects 固定输出四档含NONE、new_tasks_by_tier 含NONE键、_rate 注释修正、MonthlyTab tierLabel 补NONE、WeeklyTab 移除前端sorter、Dashboard 区分getMe失败与权限不足；未修记录留优化：PG时区/周N+1/全表加载/unpaid_rate分母
+- 已记录证据：见 feature_list.json dash-001.evidence
+- 已知风险或未解决问题：
+  - 回款语义：TaskResult.collector_id 记录的是回填操作者（含 ADMIN/SUPERVISOR 代理），非 task.assignee_id——符合 state.py 设计（主管可代理），但「催收员绩效排名」按操作者而非分配对象统计，生产可按需调整
+  - 回款率口径=当日回款数/当日已处理任务数（非新增任务数）；周完成率=当日 DONE/当日新增（跨日完成可能>100%，可接受）
+  - 真实数据账龄普遍 90_PLUS（历史订单，沿用 talk-001 记录）
+  - 图表库新增 chunk（es-*.js 2.2MB/gzip 659KB），但 lazy 代码分割未进首屏主 chunk
+  - dev.db 现有 1 笔测试回填 PAID（task5，本地数据，不影响仓库）
+- 下一步最佳动作：开始 `e2e-001` 端到端完整闭环验证（上传→算风险→跑批→分配→催收→话术→回填→大盘全流程贯通），这是 MVP 验收最后关卡
