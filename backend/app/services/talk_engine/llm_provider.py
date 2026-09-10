@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 
-import httpx
+from openai import OpenAI
 
 from app.core.config import settings
 from app.services.talk_engine.ai_config_service import EffectiveAIConfig
@@ -44,7 +44,11 @@ class MockLLMProvider(LLMProvider):
 
 
 class OpenAICompatibleProvider(LLMProvider):
-    """OpenAI 兼容协议实现（/chat/completions）。"""
+    """OpenAI 兼容协议实现。
+
+    用官方 openai SDK（base_url 原样传入，不手动拼路径）。
+    兼容 DeepSeek/通义/Kimi/glm 等任何 OpenAI 兼容服务。
+    """
 
     name = "openai_compatible"
 
@@ -56,29 +60,26 @@ class OpenAICompatibleProvider(LLMProvider):
         if not model:
             raise ValueError("OpenAICompatibleProvider 缺 model")
         self.api_key = api_key
-        self.base_url = base_url.rstrip("/")
+        self.base_url = base_url  # 原样传入 SDK，不 rstrip/不拼路径
         self.model = model
+        # SDK 自行处理鉴权与 URL 拼接
+        self._client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=settings.LLM_TIMEOUT,
+        )
 
     def generate(self, system_prompt: str, user_prompt: str) -> str:
-        url = f"{self.base_url}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-        body = {
-            "model": self.model,
-            "messages": [
+        resp = self._client.chat.completions.create(
+            model=self.model,
+            messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            "temperature": 0.7,
-            "max_tokens": 512,
-        }
-        with httpx.Client(timeout=settings.LLM_TIMEOUT) as client:
-            resp = client.post(url, headers=headers, json=body)
-            resp.raise_for_status()
-        data = resp.json()
-        content = data["choices"][0]["message"]["content"]
+            temperature=0.7,
+            max_tokens=512,
+        )
+        content = resp.choices[0].message.content
         if not content or not content.strip():
             raise ValueError("LLM 返回空内容")
         return content.strip()

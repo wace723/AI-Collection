@@ -15,6 +15,9 @@ python-multipart==0.0.20
 # 任务调度（task-001 每日跑批）
 APScheduler==3.10.4
 
+# LLM（talk-002 AI 话术生成，OpenAI 兼容协议，官方 SDK）
+openai==3.11.0
+
 # 测试
 pytest==8.3.4
 httpx==0.28.1
