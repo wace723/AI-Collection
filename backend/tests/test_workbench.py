@@ -148,6 +148,7 @@ def test_collector_sees_only_own_tasks(client, db_session, seed_users, seed_risk
     data = resp.json()["data"]
     assert data["total"] == 1
     assert data["items"][0]["service_fee_order_no"] == "WB01A"
+    assert data["items"][0]["supplier_name"] == "供应商WB01A"  # join Order 带 supplier_name
 
 
 def test_supervisor_sees_all_tasks(client, db_session, seed_users, seed_risk_config):

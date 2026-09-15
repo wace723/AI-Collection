@@ -41,6 +41,7 @@ from app.services.task_engine import (
     TaskStateError,
     assign_pending_tasks,
     claim_task,
+    reassign_task,
     run_batch,
     submit_result,
 )
@@ -60,6 +61,14 @@ _RISK_ORDER = case(
 # ── 任务列表与详情（wb-001） ───────────────────────────────────────
 
 
+def _task_to_out(task: Task, order: Order | None = None) -> TaskOut:
+    """Task ORM → TaskOut，补充 supplier_name（来自关联 Order）。"""
+    base = TaskOut.model_validate(task)
+    if order is not None:
+        base.supplier_name = order.supplier_name or ""
+    return base
+
+
 @router.get("", response_model=APIResponse[PagedResponse[TaskOut]])
 def list_tasks(
     status_filter: str | None = Query(default=None, alias="status"),
@@ -73,6 +82,7 @@ def list_tasks(
 
     - COLLECTOR：强制只看分配给自己的任务（忽略 assignee 入参）
     - SUPERVISOR/ADMIN：可选 assignee 过滤，不传则看全部
+    - 返回 supplier_name（join Order）
     """
     q = db.query(Task)
     if current_user.role == "COLLECTOR":
@@ -89,9 +99,15 @@ def list_tasks(
         .limit(size)
         .all()
     )
+    # 批量取关联 Order 的 supplier_name（按需查询，避免 N+1）
+    order_ids = [r.order_id for r in rows]
+    orders_map: dict[int, Order] = {}
+    if order_ids:
+        for o in db.query(Order).filter(Order.id.in_(order_ids)).all():
+            orders_map[o.id] = o
     return APIResponse(
         data=PagedResponse(
-            items=[TaskOut.model_validate(r) for r in rows],
+            items=[_task_to_out(r, orders_map.get(r.order_id)) for r in rows],
             total=total,
             page=page,
             limit=size,
@@ -117,7 +133,7 @@ def get_task(
 
     order = db.get(Order, task.order_id)
     feature = db.get(OrderFeature, task.order_id)
-    base = TaskOut.model_validate(task)
+    base = _task_to_out(task, order)
     return APIResponse(
         data=TaskDetailOut(
             **base.model_dump(),
@@ -212,7 +228,7 @@ def claim(
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except TaskStateError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
-    return APIResponse(data=TaskOut.model_validate(task))
+    return APIResponse(data=_task_to_out(task, db.get(Order, task.order_id)))
 
 
 @router.post("/{task_id}/result", response_model=APIResponse[TaskOut])
@@ -237,4 +253,25 @@ def submit_task_result(
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     except TaskStateError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
-    return APIResponse(data=TaskOut.model_validate(task))
+    return APIResponse(data=_task_to_out(task, db.get(Order, task.order_id)))
+
+
+@router.post("/{task_id}/reassign", response_model=APIResponse[TaskOut])
+def reassign(
+    task_id: int,
+    assignee_id: int = Query(..., description="目标催收员 ID"),
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_role("SUPERVISOR", "ADMIN")),
+) -> APIResponse[TaskOut]:
+    """主管手动改派任务（SUPERVISOR/ADMIN）。
+
+    把任务从当前催收员改派给另一名活跃催收员；终态不可改派；
+    IN_PROGRESS 改派退回 PENDING。
+    """
+    try:
+        task = reassign_task(db, task_id, assignee_id)
+    except TaskNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except TaskStateError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return APIResponse(data=_task_to_out(task, db.get(Order, task.order_id)))

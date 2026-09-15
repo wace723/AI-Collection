@@ -77,3 +77,16 @@ export async function getBatchStatus(
   )
   return res.data.data as BatchStatusOut
 }
+
+/** 主管手动改派任务（SUPERVISOR/ADMIN） */
+export async function reassignTask(
+  taskId: number,
+  assigneeId: number,
+): Promise<Task> {
+  const res = await client.post<APIResponse<Task>>(
+    `/tasks/${taskId}/reassign`,
+    null,
+    { params: { assignee_id: assigneeId } },
+  )
+  return res.data.data as Task
+}

@@ -241,6 +241,7 @@ export default function Workbench() {
 
   const columns: ColumnsType<Task> = [
     { title: '订单号', dataIndex: 'service_fee_order_no', width: 200 },
+    { title: '供应商名称', dataIndex: 'supplier_name', width: 180 },
     {
       title: '风险档',
       dataIndex: 'risk_tier',

@@ -3,10 +3,10 @@
 ## 当前已验证状态
 
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
-- 标准启动路径：`./init.sh`
-- 标准验证路径：后端 `pytest` + 前端 `npm run build`（骨架就绪后）
-- 当前最高优先级未完成功能：**无**（全部 12 个功能 passing，MVP 验收完成）
-- 当前 blocker：无（e2e-001 端到端完整闭环验证已 passing；真实 LLM 调通仍待用户确认 base_url 可达性，非 MVP 阻塞项）
+- 标准启动路径：`./init.sh`（或 `./start.sh` 快速启动不跑测试）
+- 标准验证路径：后端 `pytest` + 前端 `npm run build`
+- 当前最高优先级未完成功能：**无**（MVP 12 功能全 passing + supervisor 增强 4 项已完成）
+- 当前 blocker：无（真实 LLM 已调通 openai SDK；主管视图/登出/工作台供应商列已完成）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -374,3 +374,28 @@
   - dev.db 现有多笔测试回填 PAID（本地数据，不影响仓库）
   - 真实 LLM 调 tianqu.yzw.cn 超时仍待用户确认 base_url 可达性（非 MVP 阻塞项）
 - 下一步最佳动作：**MVP 验收完成**。后续可考虑：真实 LLM 调通（用户确认 base_url）、PG 时区统一、前端 code-split 优化主 chunk、真实算法替换 MockRiskProvider（需时间切割防泄漏）、主管手动改派（F-TASK-04 P1）
+
+### Session 014
+
+- 日期：2026-09-10 ~ 2026-09-15
+- 本轮目标：4 项增强开发（主管视图完善 / 登出 / 导入去重确认 / 工作台加供应商名称）
+- 工具：Claude Code
+- 需求澄清：角色权限管理=仅角色分配（不建 RBAC 表）；登出=前端清 token；场景码=服务费订单号（现有去重已满足）；标的名称 CSV 无此字段不加
+- 已完成：
+  - **需求1 主管视图**：`api/users.py`（GET 列表/POST 新增/PUT 改角色停用重置密码/DELETE，SUPERVISOR 查、ADMIN 改）+ `services/task_engine/reassign.py`（reassign_task，终态不可改派、IN_PROGRESS 退回 PENDING）+ `api/tasks.py` 加 POST /{id}/reassign + `services/supervisor_service.py`（get_staff_performance 聚合）+ `api/supervisor.py`（GET /staff-performance）+ `schemas/user.py`/`schemas/supervisor.py`；前端 `pages/Supervisor/` 重写（index 三 Tab + UsersTab/StaffTab/ReassignTab，均 lazy）
+  - **需求2 登出**：`components/Layout/index.tsx` Header 加用户名+Dropdown 登出（调 logout→clearToken→跳/login）
+  - **需求3 导入去重**：确认 parser.py:188-195 已按 service_fee_order_no 去重，无需改动
+  - **需求4 工作台供应商名称**：TaskOut 加 supplier_name 字段；tasks.py 列表查询批量取关联 Order 填充 supplier_name（避免 N+1）；Workbench columns 加供应商名称列
+- 运行过的验证：
+  - `pytest tests/test_users.py -q` → 17 passed
+  - `pytest tests/test_reassign.py -q` → 11 passed
+  - `pytest tests/test_supervisor.py -q` → 5 passed
+  - `pytest -q` 全量 → **185 passed**（152 旧 + 33 新，无回归）
+  - `npm run build` → tsc + vite build 通过（主 chunk 降到 619KB，Supervisor 三 Tab lazy 独立 chunk）
+  - 真实联调（8020 端口）：用户 CRUD 全通、改派 task10 collector3→collector1、绩效 collector1 pending=13/done=3/paid=2/rate=66.7%、工作台 supplier_name「重庆格之森科技有限公司」
+- 已知风险或未解决问题：
+  - 删除用户约束：不可删自己(409)、不可删最后一名 ADMIN(400)；但实际「删自己」会先于「最后 ADMIN」触发
+  - 改派 IN_PROGRESS 任务退回 PENDING，新催收员需重新领取（状态机一致）
+  - 绩效 paid_count 用 TaskResult PAID 明细数（按 collector_id），含主管代理回填
+  - 前端 Supervisor 三 Tab lazy 加载，首次切换有短暂 loading
+- 下一步最佳动作：可继续完善（话术模板管理 UI、真实算法替换、PG 迁移、非功能测试），或真实业务数据灌入验证

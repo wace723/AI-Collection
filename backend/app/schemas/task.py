@@ -38,13 +38,17 @@ class AssignmentRunOut(BaseModel):
 
 
 class TaskOut(BaseModel):
-    """任务详情（state machine 操作返回）。"""
+    """任务详情（state machine 操作返回）。
+
+    supplier_name 来自关联 Order，列表/详情统一返回（工作台展示用）。
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     order_id: int
     service_fee_order_no: str
+    supplier_name: str = ""
     risk_tier: str
     scene: str
     day_offset: int

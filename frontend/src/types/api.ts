@@ -126,6 +126,7 @@ export interface Task {
   id: number
   order_id: number
   service_fee_order_no: string
+  supplier_name: string
   risk_tier: RiskTier
   scene: Scene
   day_offset: number
@@ -338,4 +339,46 @@ export interface MonthlyDashboard {
   processed_count: number
   paid_rate: number
   tier_effects: TierEffect[]
+}
+
+// ── 用户管理（supervisor 增强） ──────────────────────────────────
+
+/** 用户（含 id/角色/状态，与 auth User 同结构） */
+export interface UserAccount {
+  id: number
+  username: string
+  display_name: string
+  role: Role
+  is_active: boolean
+}
+
+/** 新增用户入参 */
+export interface UserCreate {
+  username: string
+  password: string
+  display_name: string
+  role: Role
+}
+
+/** 编辑用户入参（全可选，reset_password 重置为 admin123） */
+export interface UserUpdate {
+  role?: Role
+  is_active?: boolean
+  reset_password?: boolean
+}
+
+// ── 员工绩效（supervisor 增强） ──────────────────────────────────
+
+/** 催收员绩效 */
+export interface StaffPerformance {
+  id: number
+  username: string
+  display_name: string
+  role: string
+  is_active: boolean
+  pending_count: number
+  in_progress_count: number
+  done_count: number
+  paid_count: number
+  paid_rate: number
 }
