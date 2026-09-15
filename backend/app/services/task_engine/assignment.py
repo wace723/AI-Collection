@@ -98,7 +98,8 @@ def assign_pending_tasks(db: Session) -> AssignmentResult:
     for task in pending:
         assignee_id = min(loads, key=loads.get)  # 当前负载最低者；tie 取最小 id
         task.assignee_id = assignee_id
-        task.status = "PENDING"
+        # 分配后直接处理中（去掉领取步骤，催收员无需 claim）
+        task.status = "IN_PROGRESS"
         task.assigned_at = now
         loads[assignee_id] += 1
         assigned += 1

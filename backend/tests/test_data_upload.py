@@ -130,25 +130,40 @@ def test_upload_missing_columns_returns_400(client, seed_users):
 # ── TC-DATA-04：重复订单号去重 ────────────────────────────────────
 
 
-def test_upload_duplicate_order_no_dedup(client, seed_users):
-    csv_text = _build_csv([CSV_ROW])
-    files = {"file": ("orders.csv", csv_text.encode("utf-8"), "text/csv")}
+def test_upload_duplicate_updates_payment_status(client, seed_users):
+    """重复上传同订单号：更新支付状态（非跳过）。
 
-    # 第一次上传
-    resp1 = client.post("/api/data/upload", files=files, headers=_auth_headers(client))
+    第一次：actual_pay_duration_days 为空 → 未支付（pay_status=None）
+    第二次：actual_pay_duration_days 有值 → 已支付（pay_status=PAID），updated=1
+    """
+    # 构造未支付行（实际支付时长_天 为空）
+    row_unpaid = CSV_ROW_OVERDUE.replace("SFO_OVERDUE_001", "SFO_DUP_001")
+    # 构造已支付行（同订单号，实际支付时长_天=7）
+    row_paid = CSV_ROW.replace("SFO2025090800002398299", "SFO_DUP_001")
+
+    # 第一次上传（未支付）
+    files1 = {"file": ("orders.csv", _build_csv([row_unpaid]).encode("utf-8"), "text/csv")}
+    resp1 = client.post("/api/data/upload", files=files1, headers=_auth_headers(client))
     assert resp1.status_code == 200
     assert resp1.json()["data"]["inserted"] == 1
+    # 查订单：pay_status 应为 None（未支付）
+    list1 = client.get("/api/data/orders", headers=_auth_headers(client))
+    order1 = list1.json()["data"]["items"][0]
+    assert order1["pay_status"] is None
 
-    # 第二次上传相同 service_fee_order_no
-    files2 = {"file": ("orders.csv", csv_text.encode("utf-8"), "text/csv")}
+    # 第二次上传（同订单号，已支付）
+    files2 = {"file": ("orders.csv", _build_csv([row_paid]).encode("utf-8"), "text/csv")}
     resp2 = client.post("/api/data/upload", files=files2, headers=_auth_headers(client))
     assert resp2.status_code == 200
-    assert resp2.json()["data"]["inserted"] == 0
-    assert resp2.json()["data"]["skipped"] == 1
+    data2 = resp2.json()["data"]
+    assert data2["inserted"] == 0
+    assert data2["updated"] == 1  # 重复订单更新支付状态（非 skipped）
 
-    # 仍为 1 条
-    list_resp = client.get("/api/data/orders", headers=_auth_headers(client))
-    assert list_resp.json()["data"]["total"] == 1
+    # 查订单：pay_status 应为 PAID
+    list2 = client.get("/api/data/orders", headers=_auth_headers(client))
+    assert list2.json()["data"]["total"] == 1  # 仍为 1 条
+    order2 = list2.json()["data"]["items"][0]
+    assert order2["pay_status"] == "PAID"
 
 
 # ── TC-DATA-05：含空值字段存 NULL ─────────────────────────────────

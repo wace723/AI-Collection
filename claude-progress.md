@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`（或 `./start.sh` 快速启动不跑测试）
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`
-- 当前最高优先级未完成功能：**无**（MVP 12 功能全 passing + supervisor 增强 4 项已完成）
-- 当前 blocker：无（真实 LLM 已调通 openai SDK；主管视图/登出/工作台供应商列已完成）
+- 当前最高优先级未完成功能：**无**（MVP 12 功能全 passing + supervisor 增强 + 业务流程简化已完成）
+- 当前 blocker：无（状态机简化去领取、导入更新支付状态已完成并验证）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -399,3 +399,25 @@
   - 绩效 paid_count 用 TaskResult PAID 明细数（按 collector_id），含主管代理回填
   - 前端 Supervisor 三 Tab lazy 加载，首次切换有短暂 loading
 - 下一步最佳动作：可继续完善（话术模板管理 UI、真实算法替换、PG 迁移、非功能测试），或真实业务数据灌入验证
+
+### Session 015
+
+- 日期：2026-09-15
+- 本轮目标：业务流程简化（导入更新支付状态 + 状态机去领取）
+- 工具：Claude Code
+- 需求澄清：实际支付时长_天为空=未支付、有值=已支付；重复导入更新支付状态非跳过；分配后直接可回填无需领取
+- 已完成：
+  - **导入更新支付状态**：parser.py ingest_rows 改造——重复订单（service_fee_order_no 已存在）不再 skipped，改为更新支付状态（actual_pay_duration_days + 同步 Order.pay_status='PAID'/pay_time）；新订单导入时也同步 pay_status。UploadResult 加 updated 字段；schemas/data.py UploadSummary 加 updated
+  - **状态机简化**：assignment.py 分配后 status='IN_PROGRESS'（原 PENDING，去掉领取中间态）；state.py PROMISE 改期回 IN_PROGRESS（原 PENDING，保留 assignee 同催收员跟进）；reassign.py 改派后保持 IN_PROGRESS（原退回 PENDING）
+  - **删除 claim**：api/tasks.py 删 POST /{id}/claim 端点；前端 Workbench 去掉领取按钮 + onClaim + claimTask import；api/tasks.ts 删 claimTask
+  - 状态机最终：PENDING_ASSIGN ──分配──▶ IN_PROGRESS ──回填──▶ DONE；PROMISE→改期→IN_PROGRESS
+- 运行过的验证：
+  - 5 个受影响测试文件（test_data_upload/test_task_assignment/test_workbench/test_e2e/test_reassign）→ 44 passed（test 调整：去重→更新支付状态断言、分配后 IN_PROGRESS、去 claim 步骤、PROMISE 回 IN_PROGRESS、改派保持 IN_PROGRESS；删 3 个 claim 专属测试）
+  - `pytest -q` 全量 → **182 passed**（185-3 删除的 claim 测试，无回归）
+  - `npm run build` → tsc + vite build 通过
+  - 真实联调：首次导入(未支付) inserted=1 pay_status=None；跑批 generated=1 分配 assigned=1；重复导入(已支付) updated=1 pay_status=PAID ✓
+- 已知风险或未解决问题：
+  - claim_task 函数在 state.py 保留（未删，避免破坏 import），但 /claim API 已删，流程不再使用
+  - PENDING 态不再产生新任务，但兼容历史数据（reassign 对 PENDING 改派设为 IN_PROGRESS）
+  - 导入更新只更新支付状态，其他特征字段保持首次导入值
+- 下一步最佳动作：可继续完善（话术模板管理 UI、真实算法替换、PG 迁移、非功能测试）

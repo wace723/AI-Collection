@@ -3,7 +3,7 @@
 主管可把任务从 A 催收员改派给 B 催收员：
 - 终态（DONE/CANCELLED）不可改派
 - 新催收员必须存在、是 COLLECTOR、且 is_active
-- IN_PROGRESS 改派后退回 PENDING（让新催收员重新领取，避免状态不一致）
+- 改派后保持 IN_PROGRESS（不再退回 PENDING，因已去掉领取步骤）
 """
 
 from __future__ import annotations
@@ -41,12 +41,12 @@ def reassign_task(db: Session, task_id: int, new_assignee_id: int) -> Task:
 
     task.assignee_id = new_assignee_id
     task.assigned_at = datetime.now(timezone.utc)
-    # IN_PROGRESS 改派退回 PENDING，让新催收员重新领取（状态机一致）
-    if task.status == "IN_PROGRESS":
-        task.status = "PENDING"
+    # 保持 IN_PROGRESS（PENDING_ASSIGN 改派也设为 IN_PROGRESS，让新催收员直接处理）
+    task.status = "IN_PROGRESS"
 
     db.commit()
     return task
 
 
 __all__ = ["reassign_task"]
+

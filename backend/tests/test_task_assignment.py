@@ -18,7 +18,6 @@ from app.services.risk_engine.config_service import get_current_config
 from app.services.task_engine import (
     AssignmentError,
     assign_pending_tasks,
-    claim_task,
     generate_tasks,
     submit_result,
 )
@@ -164,7 +163,7 @@ def test_assign_high_priority_and_load_balanced(db_session, seed_users, seed_ris
         db_session.query(Task).filter(Task.risk_tier == "HIGH").all()
     )
     assert {t.assignee_id for t in high_tasks} == {cols[0].id, cols[1].id, cols[2].id}
-    assert all(t.status == "PENDING" for t in high_tasks)
+    assert all(t.status == "IN_PROGRESS" for t in high_tasks)
     assert all(t.assigned_at is not None for t in high_tasks)
 
 
@@ -268,7 +267,7 @@ def test_no_collectors_returns_skipped(db_session, seed_users, seed_risk_config)
 
 
 def test_state_machine_flow_via_api(client, db_session, seed_users, seed_risk_config):
-    """分配 → 领取 → 回填 PAID → DONE；终态不可再操作。"""
+    """分配 → 回填 PAID → DONE；终态不可再操作。"""
     o = _make_order(db_session, "FLOW", date(2026, 8, 15), "HIGH")
     task = _make_task(db_session, o, risk_tier="HIGH", due_date=date(2026, 9, 7))
     db_session.commit()
@@ -281,16 +280,9 @@ def test_state_machine_flow_via_api(client, db_session, seed_users, seed_risk_co
     db_session.expire_all()
     cols = _collectors(db_session)
     task = db_session.get(Task, task.id)
-    assert task.status == "PENDING"
+    assert task.status == "IN_PROGRESS"
     assignee = task.assignee_id
     assignee_name = next(c.username for c in cols if c.id == assignee)
-
-    # 领取（被分配的催收员）
-    resp = client.post(
-        f"/api/tasks/{task.id}/claim", headers=_headers(client, assignee_name)
-    )
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["data"]["status"] == "IN_PROGRESS"
 
     # 回填 PAID → DONE
     resp = client.post(
@@ -303,12 +295,6 @@ def test_state_machine_flow_via_api(client, db_session, seed_users, seed_risk_co
     assert body["status"] == "DONE"
     assert body["result"] == "PAID"
 
-    # 终态不可再领取 → 409
-    resp = client.post(
-        f"/api/tasks/{task.id}/claim", headers=_headers(client, assignee_name)
-    )
-    assert resp.status_code == 409
-
     # 写入 TaskResult 明细
     rows = db_session.query(TaskResult).filter(TaskResult.task_id == task.id).all()
     assert len(rows) == 1
@@ -319,7 +305,7 @@ def test_state_machine_flow_via_api(client, db_session, seed_users, seed_risk_co
 
 
 def test_promise_result_reschedules(client, db_session, seed_users, seed_risk_config):
-    """result=PROMISE + next_followup_date → 任务回 PENDING；缺失改期日 → 409。"""
+    """result=PROMISE + next_followup_date → 任务回 IN_PROGRESS；缺失改期日 → 409。"""
     o = _make_order(db_session, "PROM", date(2026, 8, 15), "HIGH")
     task = _make_task(db_session, o, risk_tier="HIGH", due_date=date(2026, 9, 7))
     db_session.commit()
@@ -331,11 +317,6 @@ def test_promise_result_reschedules(client, db_session, seed_users, seed_risk_co
         c.username for c in _collectors(db_session) if c.id == task.assignee_id
     )
 
-    # 领取
-    client.post(
-        f"/api/tasks/{task.id}/claim", headers=_headers(client, assignee_name)
-    )
-
     # PROMISE 缺改期日 → 409
     resp = client.post(
         f"/api/tasks/{task.id}/result",
@@ -344,7 +325,7 @@ def test_promise_result_reschedules(client, db_session, seed_users, seed_risk_co
     )
     assert resp.status_code == 409
 
-    # PROMISE 带改期日 → PENDING + next_followup_date
+    # PROMISE 带改期日 → IN_PROGRESS + next_followup_date（保留 assignee，承诺日再催）
     followup = (date.today() + timedelta(days=7)).isoformat()
     resp = client.post(
         f"/api/tasks/{task.id}/result",
@@ -353,33 +334,28 @@ def test_promise_result_reschedules(client, db_session, seed_users, seed_risk_co
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()["data"]
-    assert body["status"] == "PENDING"
+    assert body["status"] == "IN_PROGRESS"
     assert body["next_followup_date"] == followup
-
-    # 改期后可再次领取（新一轮催收）
-    resp = client.post(
-        f"/api/tasks/{task.id}/claim", headers=_headers(client, assignee_name)
-    )
-    assert resp.status_code == 200
-    assert resp.json()["data"]["status"] == "IN_PROGRESS"
 
 
 # ── 权限边界 ────────────────────────────────────────────────────────
 
 
-def test_collector_cannot_claim_others_task(client, db_session, seed_users, seed_risk_config):
-    """COLLECTOR 不能领取分配给别人的任务 → 409。"""
+def test_collector_cannot_result_others_task(client, db_session, seed_users, seed_risk_config):
+    """COLLECTOR 不能回填分配给别人的任务 → 409。"""
     o = _make_order(db_session, "OTHER", date(2026, 8, 15), "HIGH")
     task = _make_task(db_session, o, risk_tier="HIGH", due_date=date(2026, 9, 7))
     db_session.commit()
     client.post("/api/tasks/assign/run", headers=_headers(client, "admin"))
     db_session.expire_all()
     task = db_session.get(Task, task.id)
-    # task 的 assignee 是某 collector，用另一个 collector 登录领取
+    # task 的 assignee 是某 collector，用另一个 collector 登录回填 → 409
     cols = _collectors(db_session)
     other = next(c for c in cols if c.id != task.assignee_id)
     resp = client.post(
-        f"/api/tasks/{task.id}/claim", headers=_headers(client, other.username)
+        f"/api/tasks/{task.id}/result",
+        json={"result": "PAID"},
+        headers=_headers(client, other.username),
     )
     assert resp.status_code == 409
 
@@ -396,21 +372,3 @@ def test_assign_requires_auth(client, seed_users):
     """未登录触发分配 → 401。"""
     resp = client.post("/api/tasks/assign/run")
     assert resp.status_code == 401
-
-
-def test_claim_nonexistent_task_404(client, seed_users, seed_risk_config):
-    """领取不存在的任务 → 404。"""
-    resp = client.post("/api/tasks/999999/claim", headers=_headers(client, "collector1"))
-    assert resp.status_code == 404
-
-
-def test_claim_wrong_state_409(client, db_session, seed_users, seed_risk_config):
-    """对未分配(PENDING_ASSIGN)任务直接领取 → 409。"""
-    o = _make_order(db_session, "WRONG", date(2026, 8, 15), "HIGH")
-    task = _make_task(db_session, o, risk_tier="HIGH", due_date=date(2026, 9, 7))
-    db_session.commit()
-    # 直接给 collector1 领取（尚未分配，assignee_id 仍为 None）
-    resp = client.post(
-        f"/api/tasks/{task.id}/claim", headers=_headers(client, "collector1")
-    )
-    assert resp.status_code == 409

@@ -43,6 +43,7 @@ class UploadResult:
 
     inserted: int = 0
     skipped: int = 0
+    updated: int = 0  # 重复订单更新支付状态数
     errors: list[str] = field(default_factory=list)
 
 
@@ -164,18 +165,37 @@ def parse_csv_text(text: str) -> list[dict[str, str]]:
     return [row for row in reader if any((v or "").strip() for v in row.values())]
 
 
+def _sync_pay_status(order: Order, feature: OrderFeature, actual_pay_duration: int | None) -> None:
+    """根据「实际支付时长_天」同步订单支付状态。
+
+    有值=已支付 → pay_status='PAID'；无值=未支付 → pay_status=None。
+    batch.py 判断未支付用 Order.pay_status，导入时同步保证跑批正确识别。
+    """
+    if actual_pay_duration is not None:
+        order.pay_status = "PAID"
+        if order.pay_time is None:
+            order.pay_time = datetime.utcnow()
+    else:
+        order.pay_status = None
+        # pay_time 保留首次值不清（审计），actual_pay_duration 由 feature 反映
+
+
 def ingest_rows(db: Session, rows: list[dict[str, str]]) -> UploadResult:
     """把解析出的行入库：去重 + orders/order_features 1:1。
+
+    重复订单（service_fee_order_no 已存在）→ 更新支付状态（非跳过）：
+    按 CSV「实际支付时长_天」同步 Order.pay_status，其他特征保持首次导入值。
 
     Args:
         db: 数据库会话
         rows: parse_csv_text 的返回值
 
     Returns:
-        UploadResult(inserted, skipped, errors)
+        UploadResult(inserted, skipped, updated, errors)
     """
     inserted = 0
     skipped = 0
+    updated = 0
     errors: list[str] = []
 
     for idx, row in enumerate(rows, start=2):  # start=2 对应 CSV 行号（1 为表头）
@@ -185,27 +205,40 @@ def ingest_rows(db: Session, rows: list[dict[str, str]]) -> UploadResult:
             errors.append(f"第{idx}行: 缺失服务费订单号，跳过")
             continue
 
+        feature_fields = _parse_feature_fields(row)
+        actual_pay_duration = feature_fields.get("actual_pay_duration_days")
+
         existing = (
             db.query(Order)
             .filter(Order.service_fee_order_no == order_no)
             .first()
         )
         if existing is not None:
-            skipped += 1
+            # 重复订单：更新支付状态（非跳过）
+            existing_feature = (
+                db.query(OrderFeature)
+                .filter(OrderFeature.order_id == existing.id)
+                .first()
+            )
+            if existing_feature is not None:
+                existing_feature.actual_pay_duration_days = actual_pay_duration
+            _sync_pay_status(existing, existing_feature, actual_pay_duration)
+            updated += 1
             continue
 
         order = Order(**order_fields)
         db.add(order)
         db.flush()  # 拿到 order.id
 
-        feature_fields = _parse_feature_fields(row)
         extra = _parse_extra_features(row)
         feature = OrderFeature(order_id=order.id, **feature_fields, extra_features=extra)
         db.add(feature)
+        # 新订单也同步支付状态
+        _sync_pay_status(order, feature, actual_pay_duration)
         inserted += 1
 
     db.commit()
-    return UploadResult(inserted=inserted, skipped=skipped, errors=errors)
+    return UploadResult(inserted=inserted, skipped=skipped, updated=updated, errors=errors)
 
 
 def upload_csv_bytes(db: Session, raw: bytes) -> UploadResult:

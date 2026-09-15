@@ -40,7 +40,6 @@ from app.services.task_engine import (
     TaskNotFoundError,
     TaskStateError,
     assign_pending_tasks,
-    claim_task,
     reassign_task,
     run_batch,
     submit_result,
@@ -213,22 +212,6 @@ def run_manual_assign(
             assignee_names=result.assignee_names,
         )
     )
-
-
-@router.post("/{task_id}/claim", response_model=APIResponse[TaskOut])
-def claim(
-    task_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("COLLECTOR", "SUPERVISOR", "ADMIN")),
-) -> APIResponse[TaskOut]:
-    """领取任务：PENDING → IN_PROGRESS。COLLECTOR 只能领取分配给自己的任务。"""
-    try:
-        task = claim_task(db, task_id, current_user)
-    except TaskNotFoundError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
-    except TaskStateError as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
-    return APIResponse(data=_task_to_out(task, db.get(Order, task.order_id)))
 
 
 @router.post("/{task_id}/result", response_model=APIResponse[TaskOut])

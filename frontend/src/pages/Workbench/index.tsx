@@ -20,7 +20,6 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import dayjs from 'dayjs'
 import {
-  claimTask,
   getMe,
   getTask,
   listTasks,
@@ -150,17 +149,6 @@ export default function Workbench() {
     }
   }
 
-  const onClaim = async (t: Task) => {
-    try {
-      await claimTask(t.id)
-      message.success('已领取，请及时处理')
-      fetchTasks(page, status)
-      if (detailOpen && detail?.id === t.id) await refreshDetail(t.id)
-    } catch {
-      /* ignore */
-    }
-  }
-
   const openDetail = async (t: Task) => {
     setDetailOpen(true)
     setDetail(null)
@@ -272,12 +260,7 @@ export default function Workbench() {
           <Button size="small" onClick={() => openDetail(t)}>
             详情
           </Button>
-          {t.status === 'PENDING' && (
-            <Button size="small" type="primary" onClick={() => onClaim(t)}>
-              领取
-            </Button>
-          )}
-          {t.status === 'IN_PROGRESS' && (
+          {(t.status === 'PENDING' || t.status === 'IN_PROGRESS') && (
             <Button size="small" type="primary" onClick={() => openResult(t)}>
               回填
             </Button>
@@ -334,12 +317,7 @@ export default function Workbench() {
         extra={
           detail ? (
             <Space>
-              {detail.status === 'PENDING' && (
-                <Button type="primary" onClick={() => onClaim(detail)}>
-                  领取
-                </Button>
-              )}
-              {detail.status === 'IN_PROGRESS' && (
+              {(detail.status === 'PENDING' || detail.status === 'IN_PROGRESS') && (
                 <Button type="primary" onClick={() => openResult(detail)}>
                   回填结果
                 </Button>

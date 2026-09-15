@@ -15,6 +15,7 @@ class UploadSummary(BaseModel):
 
     inserted: int
     skipped: int
+    updated: int = 0  # 重复订单更新支付状态数
     errors: list[str] = []
 
 

@@ -193,36 +193,16 @@ def test_list_sorted_by_risk_then_age(client, db_session, seed_users, seed_risk_
     assert order_nos == ["H2", "H1", "M1", "L1"]
 
 
-# ── TC-WB-03：并发领取防重 ────────────────────────────────────────
-
-
-def test_claim_only_once(client, db_session, seed_users, seed_risk_config):
-    """同一 PENDING 任务第二次领取 → 409（已被领取/状态不符）。"""
-    cols = _collectors(db_session)
-    o = _make_order(db_session, "CLAIM")
-    task = _make_task(db_session, o, assignee_id=cols[0].id, status="PENDING")
-    db_session.commit()
-
-    resp = client.post(f"/api/tasks/{task.id}/claim", headers=_headers(client, "collector1"))
-    assert resp.status_code == 200
-    assert resp.json()["data"]["status"] == "IN_PROGRESS"
-
-    # 再次领取 → 409
-    resp2 = client.post(f"/api/tasks/{task.id}/claim", headers=_headers(client, "collector1"))
-    assert resp2.status_code == 409
-
-
 # ── TC-WB-04：处理结果回填 ─────────────────────────────────────────
 
 
 def test_result_paid_flow_with_detail(client, db_session, seed_users, seed_risk_config):
-    """领取→回填 PAID→DONE；详情可见订单+特征；TaskResult 写入。"""
+    """回填 PAID→DONE；详情可见订单+特征；TaskResult 写入。"""
     cols = _collectors(db_session)
     o = _make_order(db_session, "RES4")
-    task = _make_task(db_session, o, assignee_id=cols[0].id, status="PENDING")
+    task = _make_task(db_session, o, assignee_id=cols[0].id, status="IN_PROGRESS")
     db_session.commit()
 
-    client.post(f"/api/tasks/{task.id}/claim", headers=_headers(client, "collector1"))
     resp = client.post(
         f"/api/tasks/{task.id}/result",
         json={"result": "PAID", "note": "已结清"},
@@ -251,10 +231,9 @@ def test_dispute_visible_to_supervisor(client, db_session, seed_users, seed_risk
     """回填 DISPUTE→DONE；supervisor 列表能看到该异议任务。"""
     cols = _collectors(db_session)
     o = _make_order(db_session, "DIS5")
-    task = _make_task(db_session, o, assignee_id=cols[0].id, status="PENDING")
+    task = _make_task(db_session, o, assignee_id=cols[0].id, status="IN_PROGRESS")
     db_session.commit()
 
-    client.post(f"/api/tasks/{task.id}/claim", headers=_headers(client, "collector1"))
     client.post(
         f"/api/tasks/{task.id}/result",
         json={"result": "DISPUTE", "note": "客户对金额有异议"},

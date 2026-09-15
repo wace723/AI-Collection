@@ -1,11 +1,11 @@
-"""催收任务状态机（task-002 的 TC-TASK-11/12 部分）。
+"""催收任务状态机（task-002 的 TC-TASK-11/12 部分 + 业务流程简化）。
 
-状态流转（docs/02 §4.3）：
-    PENDING_ASSIGN ──分配──▶ PENDING ──领取──▶ IN_PROGRESS ──回填──▶ DONE(终态)
-                                                           │
-                                                           └─ PROMISE → 改期 → PENDING(承诺日再催)
+状态流转（简化后，去掉领取步骤）：
+    PENDING_ASSIGN ──分配──▶ IN_PROGRESS ──回填──▶ DONE(终态)
+                                    │
+                                    └─ PROMISE → 改期 → IN_PROGRESS(保留 assignee，承诺日再催)
 
-终态（DONE / CANCELLED）不可再变更。
+分配后直接 IN_PROGRESS，催收员无需领取。终态（DONE/CANCELLED）不可再变更。
 催收员只能操作分配给自己的任务；SUPERVISOR/ADMIN 可改派/代理。
 """
 
@@ -101,8 +101,9 @@ def submit_result(
     task.next_followup_date = next_followup_date
 
     if result == _RESULT_PROMISE:
-        # 改期：承诺日再催，回到待处理（保留 assignee 不变，便于同催收员跟进）
-        task.status = "PENDING"
+        # 改期：承诺日再催，保留 assignee 不变（同催收员跟进）。
+        # 回 IN_PROGRESS（非 PENDING），无需重新领取/分配。
+        task.status = "IN_PROGRESS"
     else:
         task.status = "DONE"
 

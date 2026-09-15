@@ -103,7 +103,7 @@ def _collectors(db) -> list[User]:
 
 
 def test_reassign_pending_task(client, db_session, seed_users, seed_risk_config):
-    """SUPERVISOR 改派 PENDING 任务：assignee 变更，状态仍 PENDING。"""
+    """SUPERVISOR 改派 PENDING 任务：assignee 变更，改派后状态为 IN_PROGRESS。"""
     cols = _collectors(db_session)
     o = _make_order(db_session, "RA01")
     t = _make_task(db_session, o, status="PENDING", assignee_id=cols[0].id)
@@ -116,12 +116,12 @@ def test_reassign_pending_task(client, db_session, seed_users, seed_risk_config)
     assert resp.status_code == 200, resp.text
     data = resp.json()["data"]
     assert data["assignee_id"] == cols[1].id
-    assert data["status"] == "PENDING"  # 状态不变
+    assert data["status"] == "IN_PROGRESS"  # 改派后保持 IN_PROGRESS
     assert data["supplier_name"] == "供应商RA01"  # 附带 supplier_name
 
 
-def test_reassign_in_progress_back_to_pending(client, db_session, seed_users, seed_risk_config):
-    """改派 IN_PROGRESS 任务：退回 PENDING，assignee 变更。"""
+def test_reassign_in_progress_stays_in_progress(client, db_session, seed_users, seed_risk_config):
+    """改派 IN_PROGRESS 任务：保持 IN_PROGRESS，assignee 变更。"""
     cols = _collectors(db_session)
     o = _make_order(db_session, "RA02")
     t = _make_task(db_session, o, status="IN_PROGRESS", assignee_id=cols[0].id)
@@ -134,7 +134,7 @@ def test_reassign_in_progress_back_to_pending(client, db_session, seed_users, se
     assert resp.status_code == 200, resp.text
     data = resp.json()["data"]
     assert data["assignee_id"] == cols[2].id
-    assert data["status"] == "PENDING"  # IN_PROGRESS 退回 PENDING
+    assert data["status"] == "IN_PROGRESS"  # 改派后保持 IN_PROGRESS
 
 
 # ── 终态不可改派 ─────────────────────────────────────────────────

@@ -34,13 +34,7 @@ export async function getTask(taskId: number): Promise<TaskDetail> {
   return res.data.data as TaskDetail
 }
 
-/** 领取任务：PENDING → IN_PROGRESS */
-export async function claimTask(taskId: number): Promise<Task> {
-  const res = await client.post<APIResponse<Task>>(`/tasks/${taskId}/claim`)
-  return res.data.data as Task
-}
-
-/** 回填处理结果：IN_PROGRESS → DONE/PENDING(PROMISE) */
+/** 回填处理结果：IN_PROGRESS → DONE/PROMISE 改期 */
 export async function submitTaskResult(
   taskId: number,
   payload: TaskResultInput,

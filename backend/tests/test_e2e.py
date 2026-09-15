@@ -188,7 +188,7 @@ def test_e2e_01_full_collection_loop(client, db_session, seed_users):
     my_tasks = resp.json()["data"]
     assert my_tasks["total"] >= 1  # collector1 至少分到 1 个
     task_id = my_tasks["items"][0]["id"]
-    assert my_tasks["items"][0]["status"] in ("PENDING", "IN_PROGRESS")
+    assert my_tasks["items"][0]["status"] == "IN_PROGRESS"
 
     # 步骤6：进入任务详情（订单信息+特征摘要）
     resp = client.get(
@@ -218,11 +218,7 @@ def test_e2e_01_full_collection_loop(client, db_session, seed_users):
     assert gen["content"]  # mock 非空
     assert gen["enabled"] is True
 
-    # 步骤8b：领取任务（PENDING→IN_PROGRESS）后回填 PAID
-    resp = client.post(
-        f"/api/tasks/{task_id}/claim", headers=_headers(client, "collector1")
-    )
-    assert resp.status_code == 200, resp.text
+    # 步骤8b：分配后已 IN_PROGRESS，直接回填 PAID
     resp = client.post(
         f"/api/tasks/{task_id}/result",
         headers=_headers(client, "collector1"),
@@ -290,8 +286,8 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
     assert len(first_tasks) == 1
     assert first_tasks[0].scene == "FIRST"
 
-    # 分配 + 领取 + 回填 PROMISE 改期
-    from app.services.task_engine import assign_pending_tasks, claim_task, submit_result
+    # 分配 + 回填 PROMISE 改期
+    from app.services.task_engine import assign_pending_tasks, submit_result
     from app.models.user import User as UserModel
 
     assign_pending_tasks(db_session)
@@ -308,8 +304,6 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
     operator = (
         db_session.query(UserModel).filter(UserModel.id == task.assignee_id).first()
     )
-    claim_task(db_session, task.id, operator)
-    db_session.commit()
     promise_date = base_date + timedelta(days=14)
     submit_result(
         db_session,
@@ -319,9 +313,9 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
         next_followup_date=promise_date,
     )
     db_session.commit()
-    # 任务回到 PENDING（改期）
+    # 任务回到 IN_PROGRESS（改期，保留 assignee）
     db_session.refresh(task)
-    assert task.status == "PENDING"
+    assert task.status == "IN_PROGRESS"
 
     # 第15天再跑批：生成 SECOND 任务（即使首轮改期，第15天时点仍触发）
     run_batch(db_session, today=base_date + timedelta(days=15), recalc_risk=False)
@@ -339,15 +333,13 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
 
     # 回填 DISPUTE → 转异议处理（DONE 终态）
     task2 = second_tasks[0]
-    # 分配 + 领取
+    # 分配（分配后直接 IN_PROGRESS，无需领取）
     assign_pending_tasks(db_session)
     db_session.commit()
     db_session.refresh(task2)
     op2 = (
         db_session.query(UserModel).filter(UserModel.id == task2.assignee_id).first()
     )
-    claim_task(db_session, task2.id, op2)
-    db_session.commit()
     submit_result(db_session, task2.id, op2, result="DISPUTE")
     db_session.commit()
     db_session.refresh(task2)
