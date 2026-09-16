@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`（或 `./start.sh` 快速启动不跑测试）
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`
-- 当前最高优先级未完成功能：**无**（MVP 12 功能全 passing + supervisor 增强 + 业务流程简化已完成）
-- 当前 blocker：无（状态机简化去领取、导入更新支付状态已完成并验证）
+- 当前最高优先级未完成功能：`data-002` 导入驱动风险概率 + 支付状态同步（in_progress，OpenSpec change 已生成，待 /opsx:apply 实施）
+- 当前 blocker：无（业务流程简化已完成；data-002 方案已定，待实施）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -399,6 +399,31 @@
   - 绩效 paid_count 用 TaskResult PAID 明细数（按 collector_id），含主管代理回填
   - 前端 Supervisor 三 Tab lazy 加载，首次切换有短暂 loading
 - 下一步最佳动作：可继续完善（话术模板管理 UI、真实算法替换、PG 迁移、非功能测试），或真实业务数据灌入验证
+
+### Session 016
+
+- 日期：2026-09-16
+- 本轮目标：规划下一轮改造（导入驱动风险概率 + 支付状态同步），用 OpenSpec 生成方案 + harness 登记追踪
+- 工具：Claude Code + OpenSpec（/opsx:propose）+ harness-creator 工作流
+- 需求澄清（3 轮 AskUserQuestion）：
+  - 风险概率：CSV 新增「风险概率」列（线下算法跑好追加），系统不再预测
+  - CSV 列映射：两套导入（待支付/已支付）共享同一 Order/OrderFeature 模型；新 CSV 表头与旧 37 列差异大（新增标的名称/概算金额/订单生成日期/中标品类/合同类型/注册省份，移除标签_30/90/180/365）
+  - 风险档：概率经 risk-002 阈值映射 HIGH/MEDIUM/LOW（沿用 tier_mapper）
+  - 三类导入：①全量待支付基础 ②增量待支付 ③增量已支付匹配回写（①②共用待支付导入入口）
+- 已完成：
+  - OpenSpec change `import-driven-risk-and-payment-sync` 生成 4 artifacts：
+    - proposal.md（why + what + 3 capability：import-payment-sync 新/data-ingestion 改/risk-engine 改）
+    - design.md（6 项决策：模型字段重构/两套 CSV 映射/导入端点拆分/概率→档位映射/跑批去 recalc/已支付回写语义）
+    - specs/（3 capability 的 WHEN/THEN 场景）
+    - tasks.md（9 组实现步骤：模型迁移→列映射→待支付导入→已支付导入→API→跑批→前端→测试→验证）
+  - 真实 CSV 样本读取确认：待支付 37 列（需加风险概率→38）、已支付 38 列（需加风险概率→39，含支付日期+实际支付时长）
+  - harness 登记追踪：feature_list.json 新增 `data-002`（in_progress，关联 OpenSpec change，BREAKING 标注）
+- 运行过的验证：无代码改动，仅方案生成
+- 已知风险或未解决问题：
+  - BREAKING：旧 37 列 CSV 不兼容，需用户用新格式
+  - actual_pay_duration_days 从 OrderFeature 移到 Order（支付状态属订单级），需迁移搬移
+  - risk-001 的 MockRiskProvider 将废弃（保留抽象供未来），其防泄漏测试随之失效
+- 下一步最佳动作：运行 `/opsx:apply` 实施 data-002（按 tasks.md 9 组步骤），实施中同步更新 feature_list.json evidence + claude-progress.md
 
 ### Session 015
 

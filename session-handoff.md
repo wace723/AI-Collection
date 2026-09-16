@@ -5,11 +5,23 @@
 
 ## 当前已验证
 
-- MVP 12 功能全 passing + supervisor 增强 + 业务流程简化（去领取/导入更新支付状态）已完成
-- 这轮实际跑过的验证（Session 015）：
-  - 后端 pytest 全量 **182 passed**（无回归；删除 3 个 claim 专属测试）
-  - 前端 `npm run build` 通过
-  - 真实联调：导入未支付→跑批→分配 IN_PROGRESS→重复导入更新 pay_status=PAID ✓
+- MVP 12 功能全 passing + supervisor 增强 + 业务流程简化已完成；**data-002 导入驱动风险+支付同步已规划（OpenSpec + harness 登记，待实施）**
+- 这轮实际跑过的验证（Session 016）：
+  - OpenSpec change `import-driven-risk-and-payment-sync` 生成 4 artifacts（proposal/design/specs/tasks）
+  - 真实 CSV 样本读取确认表头（待支付 37 列、已支付 38 列，均需加风险概率列）
+  - feature_list.json 新增 data-002（in_progress）
+
+## 下一步
+
+- 运行 `/opsx:apply` 实施 data-002（按 openspec/changes/import-driven-risk-and-payment-sync/tasks.md 9 组步骤）
+- 实施中同步：feature_list.json 填 evidence、claude-progress.md 加 Session、clean-state-checklist 勾选
+- 完成门槛：pytest + npm build + 真实 CSV 联调（工作区两个样本文件）
+
+## 本轮规划改动（Session 016）
+
+- `openspec/changes/import-driven-risk-and-payment-sync/`（proposal + design + specs + tasks）
+- `feature_list.json`（新增 data-002 in_progress）
+- `claude-progress.md`（Session 016）
 
 ## 本轮改动（业务流程简化）
 
