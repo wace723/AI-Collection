@@ -1,9 +1,14 @@
-"""e2e-001 端到端完整闭环验证。
+"""e2e-001 端到端完整闭环验证（data-002 改造后重写）。
 
 覆盖 docs/03 §8 TC-E2E-01/02/03：
-- TC-E2E-01 完整催收闭环（上传→算风险→跑批→分配→工作台→AI话术→回填→大盘）
+- TC-E2E-01 完整催收闭环（上传待支付→跑批→分配→工作台→AI话术→回填→大盘）
 - TC-E2E-02 高风险多轮催收（FIRST→PROMISE 改期→第15天 SECOND）
 - TC-E2E-03 已支付订单全程不催收
+
+data-002 改造点：
+- 上传改 POST /api/data/upload-pending（CSV 含风险概率列，导入即写风险档）
+- 移除 recalc-risk 步骤（风险概率由导入写入，跑批不再算）
+- 跑批 recalc=false（用导入写入的档位直接生成任务）
 
 通过 TestClient 串真实 API 端到端验证全流程贯通。AI 话术走 mock（不触网）。
 """
@@ -19,16 +24,16 @@ from app.models.task import Task
 from app.models.user import User
 from app.services.task_engine import run_batch
 
-# 37 列表头（与示例文件一致，复用 test_data_upload 模式）
+# 待支付订单 CSV 表头（38 列，与 columns.py 一致）
 CSV_HEADER = (
-    "供应商编号,供应商名称,招标编号,服务费订单号,招标类型,采购类型,中标日期,"
-    "实际支付时长_天,标签_30天是否欠费,标签_90天是否欠费,标签_180天是否欠费,"
-    "标签_365天是否欠费,历史平台使用费订单数,上次缴费历时_天,历史缴费平均历时_天,"
-    "服务市场历史支付金额,历史报名次数,历史投标次数,历史中标次数,历史中标率,"
-    "近90天投标活跃度,首次中标距本次间隔_天,中标时是否会员,中标前购买会员次数,"
-    "注册资金,注册地区,注册时间距中标间隔_天,平台入驻时间距中标间隔_天,"
-    "最早入库时间距中标间隔_天,供应商品类,标签表历史中标率,股份优质评级次数,"
-    "合作单位数量,累计履约项目数,中标月份,是否月末,是否季末"
+    "供应商编号,供应商名称,招标编号,服务费订单号,标的名称,招标类型,采购类型,"
+    "中标品类,合同类型,标的概算金额,中标日期,订单生成日期,历史平台使用费订单数,"
+    "上次缴费历时_天,历史缴费平均历时_天,服务市场历史支付金额,历史报名次数,"
+    "历史投标次数,历史中标次数,历史中标率,近90天投标活跃度,首次中标距本次间隔_天,"
+    "中标时是否会员,中标前购买会员次数,注册资金,注册地区,注册省份,"
+    "注册时间距中标间隔_天,平台入驻时间距中标间隔_天,最早入库时间距中标间隔_天,"
+    "标签表历史中标率,股份优质评级次数,合作单位数量,累计履约项目数,"
+    "中标月份,是否月末,是否季末,风险概率"
 )
 
 
@@ -48,24 +53,25 @@ def _headers(client, username) -> dict[str, str]:
 
 
 def _make_row(order_no: str, supplier: str, win_bid_date: date) -> str:
-    """构造一行 HIGH 风险 CSV 数据（特征使 mock 概率 ≥70 → HIGH 档）。
+    """构造一行待支付 CSV 数据（38 列，风险概率=75 → HIGH 档）。
 
-    mock 公式：缴费历时长(0.35)+平台使用费订单数少(0.25)+中标率低(0.20)
-    +活跃度低(0.15)+非会员(0.05) → 高风险。win_bid_date 可控。
+    win_bid_date 可控，风险概率直接写入 CSV，导入即定档（不再依赖 mock 重算）。
     """
     return (
-        f"1355714,{supplier},biz001,{order_no},竞价采购,集中采购,"
+        f"1355714,{supplier},biz001,{order_no},某标的项目,"
+        f"竞价采购,集中采购,工程类,合同类型1,1000000,"
         f"{win_bid_date.year}/{win_bid_date.month}/{win_bid_date.day},"
-        # 实际支付时长空(NULL)、各欠费标签=1
-        ",1,1,1,1,"
-        # 历史平台使用费订单数=0(少)、上次缴费历时=30、历史缴费平均历时=30(长→高风险)
-        "0,30,30,"
-        # 服务市场支付金额、报名、投标、中标=2(低)、中标率=0.05(低→高风险)
-        "5000,5,6,2,0.05,"
-        # 近90天活跃度=0(低→高风险)、首次中标间隔=100、非会员=0、会员购买次数=0
-        "0,100,0,0,"
-        # 注册资金、注册地区、各间隔、品类、标签中标率、优质评级、合作单位、履约项目、月份、月末、季末
-        "5000000,北京,2000,1800,1600,市政类,0.1,0,1,1,1,0,0"
+        f"{win_bid_date.year}/{win_bid_date.month}/{win_bid_date.day},"
+        # 历史平台使用费订单数=0、上次缴费历时=30、历史缴费平均历时=30
+        f"0,30,30,"
+        # 服务市场支付金额、报名、投标、中标=2、中标率=0.05
+        f"5000,5,6,2,0.05,"
+        # 近90天活跃度=0、首次中标间隔=100、非会员=0、会员购买次数=0
+        f"0,100,0,0,"
+        # 注册资金、注册地区、注册省份、各间隔、标签中标率、优质评级、合作单位、履约项目、月份、月末、季末
+        f"5000000,北京,北京,2000,1800,1600,0.1,0,1,1,1,0,0,"
+        # 风险概率=75 → HIGH 档（≥70）
+        f"75"
     )
 
 
@@ -140,33 +146,31 @@ def seed_users(db_session):
 
 
 def test_e2e_01_full_collection_loop(client, db_session, seed_users):
-    """上传→算风险→确认配置→跑批→分配→工作台→详情→推荐话术→AI生成→回填PAID→大盘。
+    """上传待支付→跑批→分配→工作台→详情→推荐话术→AI生成→回填PAID→大盘。
 
-    构造 20 条订单，win_bid_date=today-8天（HIGH 档 7 天时点已到，生成 FIRST 任务）。
+    构造 20 条 HIGH 风险订单（风险概率=75），win_bid_date=today-8天
+    （HIGH 档 7 天时点已到，生成 FIRST 任务）。
     """
     today = date.today()
     win_bid = today - timedelta(days=8)
 
-    # 步骤1：管理员上传 CSV，20 条入库
+    # 步骤1：管理员上传待支付 CSV，20 条入库（风险概率=75 → HIGH）
     rows = [_make_row(f"SFO_E2E_{i:04d}", f"测试公司{i}", win_bid) for i in range(20)]
     csv_text = _build_csv(rows)
     files = {"file": ("orders.csv", csv_text.encode("utf-8"), "text/csv")}
-    resp = client.post("/api/data/upload", files=files, headers=_headers(client, "admin"))
+    resp = client.post(
+        "/api/data/upload-pending", files=files, headers=_headers(client, "admin")
+    )
     assert resp.status_code == 200, resp.text
     assert resp.json()["data"]["inserted"] == 20
 
-    # 步骤2：触发重新计算风险
-    resp = client.post(
-        "/api/data/orders/recalc-risk", headers=_headers(client, "admin")
-    )
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["data"]["recalculated"] == 20
+    # 步骤2：风险档已由导入写入（无 recalc 步骤）
 
-    # 步骤3：默认风险档配置已 seed 生效（步骤 fixture）
+    # 步骤3：默认风险档配置已 seed 生效（fixture）
 
-    # 步骤4：管理员手动触发跑批
+    # 步骤4：管理员手动触发跑批（recalc=false，用导入写入的档位）
     resp = client.post(
-        "/api/tasks/batch/run?recalc=true", headers=_headers(client, "admin")
+        "/api/tasks/batch/run?recalc=false", headers=_headers(client, "admin")
     )
     assert resp.status_code == 200, resp.text
     batch = resp.json()["data"]
@@ -254,16 +258,12 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
     rows = [_make_row("SFO_MR_001", "多轮催收测试公司", base_date)]
     csv_text = _build_csv(rows)
     files = {"file": ("orders.csv", csv_text.encode("utf-8"), "text/csv")}
-    resp = client.post("/api/data/upload", files=files, headers=_headers(client, "admin"))
+    resp = client.post(
+        "/api/data/upload-pending", files=files, headers=_headers(client, "admin")
+    )
     assert resp.json()["data"]["inserted"] == 1
 
-    # 重算风险 → HIGH 档（特征构造使 mock 概率落在 HIGH）
-    resp = client.post(
-        "/api/data/orders/recalc-risk", headers=_headers(client, "admin")
-    )
-    assert resp.json()["data"]["recalculated"] == 1
-    # 确认该订单为 HIGH 档（mock 5 维加权，本行特征 → 可能 HIGH/MEDIUM）
-    # 用 db 直接确认档位，若非 HIGH 则不强求档位，验证时点生成逻辑即可
+    # 风险档已由导入写入（风险概率=75 → HIGH 档）
     from app.models.order import Order
 
     order = (
@@ -272,7 +272,7 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
         .first()
     )
     assert order is not None
-    assert order.risk_tier is not None  # 有档位
+    assert order.risk_tier == "HIGH"
 
     # 第7天跑批：应生成 FIRST 任务（HIGH 档 day_offset=7）
     run_batch(db_session, today=base_date + timedelta(days=7), recalc_risk=False)
@@ -292,12 +292,6 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
 
     assign_pending_tasks(db_session)
     db_session.commit()
-    collector = (
-        db_session.query(UserModel)
-        .filter(UserModel.role == "COLLECTOR")
-        .order_by(UserModel.id)
-        .first()
-    )
     task = first_tasks[0]
     # 确保分配给了某催收员
     assert task.assignee_id is not None
@@ -351,24 +345,23 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
 
 
 def test_e2e_03_paid_order_never_collected(client, db_session, seed_users):
-    """上传含已支付订单 → 跑批不生成其任务 → 多日跑批始终不生成。"""
+    """上传含已支付订单 → 跑批不生成其任务 → 多日跑批始终不生成。
+
+    data-002 改造后：用 upload-pending 导入未支付订单（风险概率=75→HIGH），
+    再手动标记 pay_status=PAID（模拟真实已支付订单）。
+    """
     today = date.today()
     win_bid = today - timedelta(days=90)  # 账龄足够长，所有时点都到
 
     rows = [_make_row("SFO_PAID_001", "已支付公司", win_bid)]
     csv_text = _build_csv(rows)
     files = {"file": ("orders.csv", csv_text.encode("utf-8"), "text/csv")}
-    resp = client.post("/api/data/upload", files=files, headers=_headers(client, "admin"))
+    resp = client.post(
+        "/api/data/upload-pending", files=files, headers=_headers(client, "admin")
+    )
     assert resp.json()["data"]["inserted"] == 1
 
-    # 重算风险（有档位才能进入跑批候选）
-    resp = client.post(
-        "/api/data/orders/recalc-risk", headers=_headers(client, "admin")
-    )
-    assert resp.json()["data"]["recalculated"] == 1
-
-    # 上传后该订单 pay_status 仍为 NULL（CSV 不含 pay_status 列），
-    # 手动标记为已支付（模拟真实已支付订单）
+    # 风险档已由导入写入（HIGH 档，进入跑批候选）
     from app.models.order import Order
 
     order = (
@@ -376,10 +369,14 @@ def test_e2e_03_paid_order_never_collected(client, db_session, seed_users):
         .filter(Order.service_fee_order_no == "SFO_PAID_001")
         .first()
     )
+    assert order.risk_tier == "HIGH"
+
+    # 上传后该订单 pay_status 仍为 NULL（待支付导入不设支付状态），
+    # 手动标记为已支付（模拟真实已支付订单）
     order.pay_status = "PAID"
     db_session.commit()
 
-    # 跑批（recalc=false，用现有档位）
+    # 跑批（recalc=false，用导入写入的档位）
     resp = client.post(
         "/api/tasks/batch/run?recalc=false", headers=_headers(client, "admin")
     )

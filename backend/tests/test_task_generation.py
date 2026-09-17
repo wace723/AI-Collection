@@ -337,21 +337,25 @@ def test_missing_win_date_or_tier_ignored(db_session, seed_risk_config):
     assert result.generated == 0
 
 
-def test_run_batch_recalc_then_generate(db_session, seed_risk_config):
-    """run_batch(recalc_risk=True)：无档订单先按 mock(50→MEDIUM) 定档再生成。"""
+def test_run_batch_uses_imported_tier(db_session, seed_risk_config):
+    """run_batch(recalc=False)：用导入写入的档位直接生成任务（data-002 改造）。
+
+    风险概率/档位由 CSV 导入写入，跑批不再算。
+    模拟导入结果：MEDIUM 档订单 → 30 天时点生成 1 个任务。
+    """
     _make_order(
         db_session,
-        "RECALC_MED",
+        "IMPORT_MED",
         win_bid_date=date(2026, 8, 8),
-        risk_tier=None,  # 尚未计算风险
+        risk_tier="MEDIUM",  # 导入写入的档位
         pay_status=None,
     )
     db_session.commit()
 
-    result = run_batch(db_session, today=date(2026, 9, 8), recalc_risk=True)
+    result = run_batch(db_session, today=date(2026, 9, 8), recalc_risk=False)
 
-    order = db_session.query(Order).filter_by(service_fee_order_no="RECALC_MED").first()
-    assert order.risk_tier == "MEDIUM"  # mock 无特征=50 → MEDIUM
+    order = db_session.query(Order).filter_by(service_fee_order_no="IMPORT_MED").first()
+    assert order.risk_tier == "MEDIUM"  # 档位保持导入值，不被跑批改写
     assert result.generated == 1
     task = _tasks(db_session)[0]
     assert (task.risk_tier, task.day_offset) == ("MEDIUM", 30)

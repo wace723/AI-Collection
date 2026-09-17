@@ -1,25 +1,28 @@
-"""CSV 列名 → 模型属性映射常量。
+"""CSV 列名 → 模型属性映射常量（data-002 重构）。
 
-37 列表头与 Order/OrderFeature 模型属性的精确对应。
-是 data_ingestion 解析的唯一事实来源，列映射集中管理便于维护。
+两套 CSV 表头：
+- 待支付订单 CSV（38列）：37 列基础 + 「风险概率」
+- 已支付订单 CSV（39列）：38 列基础（含支付日期+实际支付时长）+ 「风险概率」
+
+列映射集中管理，是 data_ingestion 解析的唯一事实来源。
 """
 
 from __future__ import annotations
 
-# 37 列表头（与示例文件 平台使用费特征查询_*.csv 一致）
-EXPECTED_COLUMNS: tuple[str, ...] = (
+# 待支付订单 CSV 表头（37 列 + 风险概率 = 38 列）
+PENDING_ORDER_COLUMNS: tuple[str, ...] = (
     "供应商编号",
     "供应商名称",
     "招标编号",
     "服务费订单号",
+    "标的名称",
     "招标类型",
     "采购类型",
+    "中标品类",
+    "合同类型",
+    "标的概算金额",
     "中标日期",
-    "实际支付时长_天",
-    "标签_30天是否欠费",
-    "标签_90天是否欠费",
-    "标签_180天是否欠费",
-    "标签_365天是否欠费",
+    "订单生成日期",
     "历史平台使用费订单数",
     "上次缴费历时_天",
     "历史缴费平均历时_天",
@@ -34,10 +37,10 @@ EXPECTED_COLUMNS: tuple[str, ...] = (
     "中标前购买会员次数",
     "注册资金",
     "注册地区",
+    "注册省份",
     "注册时间距中标间隔_天",
     "平台入驻时间距中标间隔_天",
     "最早入库时间距中标间隔_天",
-    "供应商品类",
     "标签表历史中标率",
     "股份优质评级次数",
     "合作单位数量",
@@ -45,9 +48,54 @@ EXPECTED_COLUMNS: tuple[str, ...] = (
     "中标月份",
     "是否月末",
     "是否季末",
+    "风险概率",
 )
 
-# 必填列（缺失即报 400，缺失到这些列无法建订单）
+# 已支付订单 CSV 表头（38 列 + 风险概率 = 39 列）
+# 与待支付差异：多「支付日期」「实际支付时长_天」（在订单生成日期后），无「订单生成日期」
+PAID_ORDER_COLUMNS: tuple[str, ...] = (
+    "供应商编号",
+    "供应商名称",
+    "招标编号",
+    "服务费订单号",
+    "标的名称",
+    "招标类型",
+    "采购类型",
+    "中标品类",
+    "合同类型",
+    "标的概算金额",
+    "中标日期",
+    "支付日期",
+    "实际支付时长_天",
+    "历史平台使用费订单数",
+    "上次缴费历时_天",
+    "历史缴费平均历时_天",
+    "服务市场历史支付金额",
+    "历史报名次数",
+    "历史投标次数",
+    "历史中标次数",
+    "历史中标率",
+    "近90天投标活跃度",
+    "首次中标距本次间隔_天",
+    "中标时是否会员",
+    "中标前购买会员次数",
+    "注册资金",
+    "注册地区",
+    "注册省份",
+    "注册时间距中标间隔_天",
+    "平台入驻时间距中标间隔_天",
+    "最早入库时间距中标间隔_天",
+    "标签表历史中标率",
+    "股份优质评级次数",
+    "合作单位数量",
+    "累计履约项目数",
+    "中标月份",
+    "是否月末",
+    "是否季末",
+    "风险概率",
+)
+
+# 必填列（缺失即报 400）
 REQUIRED_COLUMNS: tuple[str, ...] = (
     "供应商编号",
     "供应商名称",
@@ -55,25 +103,29 @@ REQUIRED_COLUMNS: tuple[str, ...] = (
     "服务费订单号",
 )
 
-# CSV 列名 → Order 模型属性（标识 + 状态字段）
+# CSV 列名 → Order 模型属性（标识 + 状态字段，两套 CSV 共用）
 ORDER_FIELD_MAP: dict[str, str] = {
     "供应商编号": "supplier_no",
     "供应商名称": "supplier_name",
     "招标编号": "biz_no",
     "服务费订单号": "service_fee_order_no",
+    "标的名称": "subject_name",
     "招标类型": "tender_type_desc",
     "采购类型": "purchase_type_desc",
+    "中标品类": "bid_category",
+    "合同类型": "contract_type",
+    "标的概算金额": "subject_estimate_amount",
     "中标日期": "win_bid_date",
+    "订单生成日期": "order_generated_date",
+    "支付日期": "pay_time",
+    "实际支付时长_天": "actual_pay_duration_days",
+    "风险概率": "risk_prob",
     "注册地区": "register_area",
+    "注册省份": "register_province",
 }
 
-# CSV 列名 → OrderFeature 模型属性（37 列中的非标识特征字段）
+# CSV 列名 → OrderFeature 模型属性（特征字段，两套 CSV 共用）
 FEATURE_FIELD_MAP: dict[str, str] = {
-    "实际支付时长_天": "actual_pay_duration_days",
-    "标签_30天是否欠费": "label_30",
-    "标签_90天是否欠费": "label_90",
-    "标签_180天是否欠费": "label_180",
-    "标签_365天是否欠费": "label_365",
     "历史平台使用费订单数": "history_fee_order_count",
     "上次缴费历时_天": "last_pay_duration_days",
     "历史缴费平均历时_天": "avg_pay_duration_days",
@@ -90,7 +142,6 @@ FEATURE_FIELD_MAP: dict[str, str] = {
     "注册时间距中标间隔_天": "register_interval_days",
     "平台入驻时间距中标间隔_天": "in_date_interval_days",
     "最早入库时间距中标间隔_天": "entry_interval_days",
-    "供应商品类": "supplier_categories",
     "标签表历史中标率": "ads_win_rate",
     "股份优质评级次数": "high_quality_cnt",
     "合作单位数量": "cooperate_org_num",
@@ -104,14 +155,9 @@ EXTRA_FEATURE_COLUMNS: tuple[str, ...] = (
     "是否季末",
 )
 
-# 各特征列的目标 Python 类型，用于空字符串→NULL 与类型转换
+# 各特征列的目标 Python 类型
 _INT_FIELDS: frozenset[str] = frozenset(
     {
-        "actual_pay_duration_days",
-        "label_30",
-        "label_90",
-        "label_180",
-        "label_365",
         "history_fee_order_count",
         "last_pay_duration_days",
         "signup_count",
@@ -134,6 +180,8 @@ _FLOAT_FIELDS: frozenset[str] = frozenset(
         "fwsc_history_pay_amount",
         "win_rate",
         "ads_win_rate",
+        "subject_estimate_amount",
+        "risk_prob",
     }
 )
 _BIGINT_FIELDS: frozenset[str] = frozenset({"register_fund"})

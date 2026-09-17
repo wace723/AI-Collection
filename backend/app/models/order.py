@@ -16,7 +16,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
-    SmallInteger,
     String,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -31,7 +30,7 @@ _FK_BIGINT = BigInteger().with_variant(Integer, "sqlite")
 
 
 class Order(Base, TimestampMixin):
-    """平台使用费订单（标识 + 状态 + 风险）。"""
+    """平台使用费订单（标识 + 状态 + 风险 + 支付）。"""
 
     __tablename__ = "orders"
 
@@ -42,16 +41,25 @@ class Order(Base, TimestampMixin):
     service_fee_order_no: Mapped[str] = mapped_column(
         String(64), unique=True, index=True
     )
+    # 新 CSV 字段（标的/品类/合同/省份/订单生成日期）
+    subject_name: Mapped[str | None] = mapped_column(String(255))
     tender_type_desc: Mapped[str | None] = mapped_column(String(64))
     purchase_type_desc: Mapped[str | None] = mapped_column(String(64))
+    bid_category: Mapped[str | None] = mapped_column(String(128))
+    contract_type: Mapped[str | None] = mapped_column(String(64))
+    subject_estimate_amount: Mapped[float | None] = mapped_column(DECIMAL(16, 2))
     win_bid_date: Mapped[date | None] = mapped_column(Date, index=True)
+    order_generated_date: Mapped[date | None] = mapped_column(Date)
     register_area: Mapped[str | None] = mapped_column(String(64))
-    # WAIT_PAY / PAID / NULL（未支付为 NULL 时由 pay_status 与 pay_time 共同表达）
+    register_province: Mapped[str | None] = mapped_column(String(64))
+    # 支付状态（已支付导入回写）
     pay_status: Mapped[str | None] = mapped_column(String(16))
     pay_time: Mapped[datetime | None] = mapped_column(DateTime)
+    actual_pay_duration_days: Mapped[int | None] = mapped_column(Integer)
+    # 风险（CSV 导入，不再系统预测）
     risk_prob: Mapped[float | None] = mapped_column(DECIMAL(5, 2))
     risk_tier: Mapped[str | None] = mapped_column(String(8))
-    risk_calc_time: Mapped[datetime | None] = mapped_column(DateTime)
+    risk_import_time: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class OrderFeature(Base):
@@ -118,19 +126,6 @@ class OrderFeature(Base):
     )
     total_perform_project_num: Mapped[int | None] = mapped_column(
         Integer, name="累计履约项目数"
-    )
-
-    # 标签
-    actual_pay_duration_days: Mapped[int | None] = mapped_column(
-        Integer, name="实际支付时长_天"
-    )
-    label_30: Mapped[int | None] = mapped_column(SmallInteger, name="标签_30天是否欠费")
-    label_90: Mapped[int | None] = mapped_column(SmallInteger, name="标签_90天是否欠费")
-    label_180: Mapped[int | None] = mapped_column(
-        SmallInteger, name="标签_180天是否欠费"
-    )
-    label_365: Mapped[int | None] = mapped_column(
-        SmallInteger, name="标签_365天是否欠费"
     )
 
     # 预留扩展特征（跨库 JSON：SQLite 用 JSON，PG 用 JSONB）

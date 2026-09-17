@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`（或 `./start.sh` 快速启动不跑测试）
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`
-- 当前最高优先级未完成功能：`data-002` 导入驱动风险概率 + 支付状态同步（in_progress，OpenSpec change 已生成，待 /opsx:apply 实施）
-- 当前 blocker：无（业务流程简化已完成；data-002 方案已定，待实施）
+- 当前最高优先级未完成功能：**无**（MVP + supervisor 增强 + 业务流程简化 + data-002 导入驱动风险全完成）
+- 当前 blocker：无（data-002 已 passing）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -424,6 +424,32 @@
   - actual_pay_duration_days 从 OrderFeature 移到 Order（支付状态属订单级），需迁移搬移
   - risk-001 的 MockRiskProvider 将废弃（保留抽象供未来），其防泄漏测试随之失效
 - 下一步最佳动作：运行 `/opsx:apply` 实施 data-002（按 tasks.md 9 组步骤），实施中同步更新 feature_list.json evidence + claude-progress.md
+
+### Session 017
+
+- 日期：2026-09-16 ~ 2026-09-17
+- 本轮目标：实施 data-002（导入驱动风险概率 + 支付状态同步），用 /opsx:apply 走 OpenSpec tasks
+- 工具：Claude Code + OpenSpec /opsx:apply + harness 状态同步
+- 已完成（9 组 32 task，31 勾选，7.3 可选跳过）：
+  - 第1组 模型与迁移：Order 新增 subject_name/bid_category/contract_type/subject_estimate_amount/order_generated_date/register_province/actual_pay_duration_days/risk_import_time；移除 risk_calc_time；OrderFeature 移除 label_30/90/180/365/actual_pay_duration_days（移到 Order）；Alembic 迁移 7a068ab18bfc
+  - 第2组 CSV 列映射：columns.py 两套映射 PENDING_ORDER_COLUMNS(38列)/PAID_ORDER_COLUMNS(39列)，含风险概率列 + 标的名称等新字段
+  - 第3组 待支付导入：parser.py ingest_pending_rows（新订单入库+风险概率经 tier_mapper 映射档位+重复更新风险概率/特征）
+  - 第4组 已支付导入：ingest_paid_rows（按 service_fee_order_no 匹配回写 pay_status=PAID/pay_time/actual_pay_duration_days，无匹配/已PAID 跳过）
+  - 第5组 API：api/data.py 删 /upload+/orders/recalc-risk；新增 /upload-pending+/upload-paid（ADMIN）；schemas/data.py OrderOut/FeatureOut 更新
+  - 第6组 跑批去 recalc：scheduler/jobs.py recalc_risk=False；calculator.recalculate_risks 保留但跑批不再调用；risk_calc_time→risk_import_time
+  - 第7组 前端：Config 拆分两个 Dragger（待支付/已支付）+ api/data.ts uploadPendingCsv/uploadPaidCsv + types Order/UploadSummary 加新字段
+  - 第8组 测试：test_data_upload(11)/test_risk(9)/test_e2e(3)/test_task_generation(20) 重写适配新接口（43 passed）；test_risk_config risk_calc_time→risk_import_time
+  - 第9组 验证：pytest 177 passed、npm build 通过、真实联调全通
+- 运行过的验证：
+  - pytest -q 全量 → 177 passed（无回归）
+  - npm run build → tsc + vite build 通过
+  - alembic upgrade head → data-002 迁移成功
+  - 真实联调（构造带风险概率 CSV + dev.db+真实uvicorn）：待支付导入 risk_prob=75→HIGH pay_status=None；跑批+分配 assigned=1；已支付导入 updated=1 回写 pay_status=PAID pay_time actual_pay_duration_days=7 ✓
+- 已知风险或未解决问题：
+  - 7.3 任务详情特征画像新字段展示未做（可选，新字段已入模型，前端 FeatureBrief 可后补）
+  - 真实 CSV 样本缺「风险概率」列，联调用构造 CSV；真实使用需线下算法跑好追加该列
+  - calculator.recalculate_risks 保留函数（recalc_risk=True 路径仍可用），但跑批默认 False 不再调用
+- 下一步最佳动作：可 /opsx:archive 归档 data-002；继续完善（话术模板管理 UI、真实算法替换、PG 迁移、非功能测试）
 
 ### Session 015
 

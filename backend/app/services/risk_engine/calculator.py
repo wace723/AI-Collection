@@ -4,7 +4,7 @@
 1. 取当前生效阈值（tier_mapper）
 2. 对每笔订单 + 特征调用注入的 RiskProvider 算概率
 3. 用 tier_mapper 映射档位
-4. 回写 Order.risk_prob / risk_tier / risk_calc_time
+4. 回写 Order.risk_prob / risk_tier / risk_import_time
 
 Provider 通过 ``get_risk_provider`` 工厂按配置注入，切换 mock→algorithm
 无需改调用方（CLAUDE.md 关键设计约束 #1）。
@@ -94,7 +94,7 @@ def recalculate_risks(
 
         order.risk_prob = prob
         order.risk_tier = tier
-        order.risk_calc_time = calc_time
+        order.risk_import_time = calc_time
 
         recalculated += 1
         tiers[tier] = tiers.get(tier, 0) + 1

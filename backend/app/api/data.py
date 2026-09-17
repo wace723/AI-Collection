@@ -1,6 +1,6 @@
-"""data-001 数据接入路由：CSV 上传 + 订单查询。
+"""data-002 数据接入路由：待支付/已支付 CSV 导入 + 订单查询。
 
-上传需 ADMIN 权限；列表/详情需登录。
+导入需 ADMIN 权限；列表/详情需登录。
 """
 
 from __future__ import annotations
@@ -19,46 +19,39 @@ from app.schemas.data import (
     OrderOut,
     UploadSummary,
 )
-from app.schemas.risk import RecalcRiskSummary
 from app.services.data_ingestion.parser import (
     CSVParseError,
     EncodingError,
-    upload_csv_bytes,
+    upload_paid_csv,
+    upload_pending_csv,
 )
-from app.services.risk_engine import recalculate_risks
 
 router = APIRouter()
 
-# 允许的文件扩展名
 _ALLOWED_SUFFIXES = {".csv"}
 
 
-@router.post("/upload", response_model=APIResponse[UploadSummary])
-def upload_csv(
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    _current_user: User = Depends(require_role("ADMIN")),
-) -> APIResponse[UploadSummary]:
-    """上传 CSV 并解析入库（仅 ADMIN）。
-
-    自动识别 GBK/UTF-8 编码，按 service_fee_order_no 去重。
-    """
+def _validate_csv(file: UploadFile) -> bytes:
+    """校验 CSV 文件并返回原始字节。"""
     filename = file.filename or ""
     if not filename.lower().endswith(".csv"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="仅支持 CSV 文件",
         )
-
     raw = file.file.read()
     if not raw or not raw.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="文件为空或格式错误",
         )
+    return raw
 
+
+def _parse_or_400(result_fn):
+    """执行上传并捕获解析异常 → 400。"""
     try:
-        result = upload_csv_bytes(db, raw)
+        return result_fn()
     except EncodingError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
@@ -68,6 +61,36 @@ def upload_csv(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
 
+
+@router.post("/upload-pending", response_model=APIResponse[UploadSummary])
+def upload_pending(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_role("ADMIN")),
+) -> APIResponse[UploadSummary]:
+    """导入待支付订单 CSV（全量/增量共用）。仅 ADMIN。
+
+    入库未支付订单 + 特征 + 风险概率（经阈值映射档位）。
+    重复订单更新风险概率 + 特征。
+    """
+    raw = _validate_csv(file)
+    result = _parse_or_400(lambda: upload_pending_csv(db, raw))
+    return APIResponse(data=UploadSummary(**result.__dict__))
+
+
+@router.post("/upload-paid", response_model=APIResponse[UploadSummary])
+def upload_paid(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_role("ADMIN")),
+) -> APIResponse[UploadSummary]:
+    """导入已支付订单 CSV。仅 ADMIN。
+
+    按服务费订单号匹配待支付订单，回写 pay_status=PAID + pay_time + 实际支付时长。
+    无匹配 / 已 PAID → 跳过。
+    """
+    raw = _validate_csv(file)
+    result = _parse_or_400(lambda: upload_paid_csv(db, raw))
     return APIResponse(data=UploadSummary(**result.__dict__))
 
 
@@ -95,22 +118,6 @@ def list_orders(
     return APIResponse(
         data=OrderListOut(items=items, total=total, page=page, limit=limit)
     )
-
-
-@router.post(
-    "/orders/recalc-risk", response_model=APIResponse[RecalcRiskSummary]
-)
-def recalc_risk(
-    db: Session = Depends(get_db),
-    _current_user: User = Depends(require_role("ADMIN")),
-) -> APIResponse[RecalcRiskSummary]:
-    """批量重算风险概率与档位（仅 ADMIN）。
-
-    对全部订单调用当前 RiskProvider（默认 mock）算概率，
-    按 active 风险档配置映射 HIGH/MEDIUM/LOW，回写订单。
-    """
-    result = recalculate_risks(db)
-    return APIResponse(data=RecalcRiskSummary(**result.__dict__))
 
 
 @router.get("/orders/{order_id}", response_model=APIResponse[OrderDetailOut])

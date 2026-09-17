@@ -75,7 +75,7 @@ def _make_order(db_session, order_no, risk_prob=None) -> Order:
     )
     if risk_prob is not None:
         order.risk_prob = risk_prob
-        order.risk_calc_time = datetime.now(timezone.utc)
+        order.risk_import_time = datetime.now(timezone.utc)
     db_session.add(order)
     db_session.flush()
     return order

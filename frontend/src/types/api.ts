@@ -34,6 +34,7 @@ export interface LoginData {
 export interface UploadSummary {
   inserted: number
   skipped: number
+  updated: number
   errors: string[]
 }
 
@@ -44,15 +45,22 @@ export interface Order {
   supplier_name: string
   biz_no: string
   service_fee_order_no: string
+  subject_name: string | null
   tender_type_desc: string | null
   purchase_type_desc: string | null
+  bid_category: string | null
+  contract_type: string | null
+  subject_estimate_amount: number | null
   win_bid_date: string | null
+  order_generated_date: string | null
   register_area: string | null
+  register_province: string | null
   pay_status: string | null
   pay_time: string | null
+  actual_pay_duration_days: number | null
   risk_prob: number | null
   risk_tier: string | null
-  risk_calc_time: string | null
+  risk_import_time: string | null
 }
 
 /** 订单分页列表 */

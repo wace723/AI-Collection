@@ -33,8 +33,8 @@ def run_daily_batch_job() -> dict[str, Any]:
     db = SessionLocal()
     try:
         today = date.today()
-        # 完整跑批：风险重算 → 任务生成 → 任务分配（docs/02 §4.2.1 第 2~5 步）
-        result = run_batch(db, today=today, recalc_risk=True)
+        # 跑批：风险概率由 CSV 导入（data-002），不再 recalc
+        result = run_batch(db, today=today, recalc_risk=False)
         assignment = assign_pending_tasks(db)
         payload = {
             "batch_id": result.batch_id,

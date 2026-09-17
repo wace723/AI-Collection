@@ -328,7 +328,7 @@
       "title": "导入驱动风险概率 + 支付状态同步（CSV 重构）",
       "description": "移除系统风险预测，风险概率从待支付 CSV「风险概率」列导入经阈值映射档位；拆分待支付/已支付两个导入入口；CSV 列映射重构为新表头（标的名称/概算金额/订单生成日期等）。",
       "dependencies": ["data-001", "risk-001", "risk-002"],
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "待支付 CSV 导入：新订单入库风险概率+档位，重复订单更新风险概率/特征",
         "已支付 CSV 导入：按订单号匹配待支付订单回写支付状态，无匹配跳过",
@@ -336,7 +336,17 @@
         "跑批不再 recalc，直接用导入的 risk_prob/risk_tier",
         "pytest 全量通过 + npm run build 通过 + 真实 CSV 联调"
       ],
-      "evidence": [],
+      "evidence": [
+        "pytest -q 全量 → 177 passed（无回归；test_data_upload 11 + test_risk 9 + test_e2e 3 + test_task_generation 20 重写适配新接口）",
+        "npm run build → tsc + vite build 通过",
+        "alembic upgrade head → data-002 迁移成功（Order 新增 subject_name/bid_category/contract_type/subject_estimate_amount/order_generated_date/register_province/actual_pay_duration_days/risk_import_time；移除 risk_calc_time + OrderFeature label_30/90/180/365/actual_pay_duration_days）",
+        "真实联调（构造带风险概率 CSV + dev.db+真实uvicorn）：待支付导入 inserted=1 risk_prob=75→HIGH pay_status=None subject_name=某标的；跑批+分配 assigned=1；已支付导入 updated=1 回写 pay_status=PAID pay_time=2025-09-10 actual_pay_duration_days=7 ✓",
+        "columns.py 两套映射：PENDING_ORDER_COLUMNS（38列含风险概率）+ PAID_ORDER_COLUMNS（39列含支付日期+实际支付时长+风险概率）",
+        "parser.py 两条路径：ingest_pending_rows（新订单入库+风险概率映射档位+重复更新风险概率/特征）+ ingest_paid_rows（按订单号匹配回写支付状态）",
+        "api/data.py：删 /upload + /orders/recalc-risk；新增 /upload-pending + /upload-paid（ADMIN）",
+        "scheduler/jobs.py 跑批 recalc_risk=False；calculator.recalculate_risks 保留但跑批不再调用",
+        "前端 Config 拆分两个 Dragger（待支付/已支付）+ api/data.ts uploadPendingCsv/uploadPaidCsv + types Order 加新字段"
+      ],
       "notes": "OpenSpec change: openspec/changes/import-driven-risk-and-payment-sync/（proposal+design+specs+tasks 已生成）。BREAKING：旧 37 列 CSV 不兼容；删除 /api/data/upload 和 /api/data/orders/recalc-risk；新增 /upload-pending + /upload-paid。影响 risk-001（MockRiskProvider 废弃但保留抽象）+ data-001（CSV 格式重构）。真实 CSV 样本：平台使用费待支付订单特征查询_2026_09_16.csv（37列→加风险概率38列）、平台使用费已支付订单特征查询_2026_09_16.csv（38列→加风险概率39列）。实施用 /opsx:apply。"
     }
   ]

@@ -27,19 +27,26 @@ class OrderOut(BaseModel):
     supplier_name: str
     biz_no: str
     service_fee_order_no: str
+    subject_name: str | None = None
     tender_type_desc: str | None = None
     purchase_type_desc: str | None = None
+    bid_category: str | None = None
+    contract_type: str | None = None
+    subject_estimate_amount: float | None = None
     win_bid_date: date | None = None
+    order_generated_date: date | None = None
     register_area: str | None = None
+    register_province: str | None = None
     pay_status: str | None = None
     pay_time: datetime | None = None
+    actual_pay_duration_days: int | None = None
     risk_prob: float | None = None
     risk_tier: str | None = None
-    risk_calc_time: datetime | None = None
+    risk_import_time: datetime | None = None
 
 
 class FeatureOut(BaseModel):
-    """订单特征（37 列非标识字段）。"""
+    """订单特征（非标识字段）。"""
 
     order_id: int
     history_fee_order_count: int | None = None
@@ -63,11 +70,6 @@ class FeatureOut(BaseModel):
     high_quality_cnt: int | None = None
     cooperate_org_num: int | None = None
     total_perform_project_num: int | None = None
-    actual_pay_duration_days: int | None = None
-    label_30: int | None = None
-    label_90: int | None = None
-    label_180: int | None = None
-    label_365: int | None = None
     extra_features: dict[str, Any] | None = None
 
 
