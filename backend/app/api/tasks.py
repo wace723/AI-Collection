@@ -61,10 +61,17 @@ _RISK_ORDER = case(
 
 
 def _task_to_out(task: Task, order: Order | None = None) -> TaskOut:
-    """Task ORM → TaskOut，补充 supplier_name（来自关联 Order）。"""
+    """Task ORM → TaskOut，补充 Order 关联字段（供应商/标的/概算/中标日）。"""
     base = TaskOut.model_validate(task)
     if order is not None:
         base.supplier_name = order.supplier_name or ""
+        base.subject_name = order.subject_name
+        base.subject_estimate_amount = (
+            float(order.subject_estimate_amount)
+            if order.subject_estimate_amount is not None
+            else None
+        )
+        base.win_bid_date = order.win_bid_date
     return base
 
 

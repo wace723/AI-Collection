@@ -135,6 +135,9 @@ export interface Task {
   order_id: number
   service_fee_order_no: string
   supplier_name: string
+  subject_name: string | null
+  subject_estimate_amount: number | null
+  win_bid_date: string | null
   risk_tier: RiskTier
   scene: Scene
   day_offset: number
@@ -172,37 +175,57 @@ export interface TaskResultInput {
   talk_used?: string
 }
 
-/** 任务详情内嵌的订单摘要 */
+/** 任务详情内嵌的订单摘要（含标的/品类/支付等完整字段） */
 export interface OrderBrief {
   id: number
   supplier_no: string
   supplier_name: string
   biz_no: string
   service_fee_order_no: string
+  subject_name: string | null
   tender_type_desc: string | null
   purchase_type_desc: string | null
+  bid_category: string | null
+  contract_type: string | null
+  subject_estimate_amount: number | null
   win_bid_date: string | null
+  order_generated_date: string | null
   register_area: string | null
+  register_province: string | null
   pay_status: string | null
   pay_time: string | null
+  actual_pay_duration_days: number | null
   risk_prob: number | null
   risk_tier: string | null
+  risk_import_time: string | null
 }
 
-/** 任务详情内嵌的用户特征摘要 */
+/** 任务详情内嵌的用户特征摘要（完整画像字段，分类展示用） */
 export interface FeatureBrief {
+  // A 类 · 缴费历史
   history_fee_order_count: number | null
   last_pay_duration_days: number | null
   avg_pay_duration_days: number | null
+  // B 类 · 活跃度与支付
   fwsc_history_pay_amount: number | null
   signup_count: number | null
   bidding_count: number | null
   win_count: number | null
   win_rate: number | null
   active_90d: number | null
+  first_win_interval_days: number | null
   is_member_at_win: boolean | null
+  member_purchase_count_before_win: number | null
+  // C 类 · 资质与标签
   register_fund: number | null
+  register_interval_days: number | null
+  in_date_interval_days: number | null
+  entry_interval_days: number | null
   supplier_categories: string | null
+  ads_win_rate: number | null
+  high_quality_cnt: number | null
+  cooperate_org_num: number | null
+  total_perform_project_num: number | null
 }
 
 /** 任务详情（含订单摘要 + 特征摘要） */
