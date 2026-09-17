@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`（或 `./start.sh` 快速启动不跑测试）
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`
-- 当前最高优先级未完成功能：**无**（MVP + supervisor 增强 + 业务流程简化 + data-002 导入驱动风险全完成）
-- 当前 blocker：无（data-002 已 passing）
+- 当前最高优先级未完成功能：**无**（MVP + supervisor 增强 + 业务流程简化 + data-002 导入驱动风险+列表详情改造 全完成并归档）
+- 当前 blocker：无（data-002 已归档，3 capability specs 已固化到主 specs）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -472,3 +472,25 @@
   - PENDING 态不再产生新任务，但兼容历史数据（reassign 对 PENDING 改派设为 IN_PROGRESS）
   - 导入更新只更新支付状态，其他特征字段保持首次导入值
 - 下一步最佳动作：可继续完善（话术模板管理 UI、真实算法替换、PG 迁移、非功能测试）
+
+### Session 018
+
+- 日期：2026-09-17
+- 本轮目标：完成 data-002 的 7.3（工作台列表+详情改造）+ 归档 change
+- 工具：Claude Code + OpenSpec /opsx:archive + harness 状态同步
+- 已完成：
+  - **7.3 工作台列表+详情改造**：
+    - 后端 TaskOut 加 subject_name/subject_estimate_amount/win_bid_date；OrderBriefOut 扩展标的/品类/支付完整字段；FeatureBriefOut 扩展 A/B/C 三类完整画像字段；api/tasks.py _task_to_out 填充新字段
+    - 前端列表列改为：服务费订单号/标的名称/供应商名称/概算金额/中标日期/风险档/场景/应催日/状态/操作
+    - 前端详情改屏幕中间 Modal（替换右侧 Drawer），宽 1100px 左右两栏：左=订单信息+任务信息+特征画像（A/B/C 三类分类展示所有字段），右=模板话术（默认加载）+AI话术（点击生成后有）+回填按钮
+    - 新建 TaskDetailModal.tsx（左 LeftPanel + 右 RightPanel/TemplateTalkCard/AiTalkCard）
+  - **归档 data-002**：openspec/changes/import-driven-risk-and-payment-sync → archive/2026-09-17-*；3 capability specs（import-payment-sync/data-ingestion/risk-engine）固化到 openspec/specs/（首次归档，delta→主 specs）
+- 运行过的验证：
+  - pytest tests/test_workbench.py tests/test_e2e.py tests/test_data_upload.py → 24 passed
+  - npm run build → tsc + vite build 通过
+  - OpenSpec 4 artifacts done, 32/32 tasks done
+- 已知风险或未解决问题：
+  - 真实 CSV 样本缺「风险概率」列，真实使用需线下算法跑好追加该列后再导入
+  - TaskDetailModal 用 Modal，宽度 1100px 在小屏可能偏挤（可后续响应式优化）
+  - calculator.recalculate_risks 保留函数但跑批不再调用（recalc_risk=False 默认）
+- 下一步最佳动作：data-002 已完整收尾。后续可选：话术模板管理 UI、真实算法替换（需时间切割）、PG 迁移、非功能测试、真实业务 CSV（含风险概率列）灌入验证全流程
