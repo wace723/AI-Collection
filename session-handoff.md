@@ -4,9 +4,15 @@
 > 本仓库由 Claude Code（`CLAUDE.md`）与 CodeBuddy（`CODEBUDDY.md`）共用一套 harness 工件开发。
 > 遵守两套规范：harness-creator（状态追踪/会话连续/验证门槛）+ OpenSpec（变更提案/spec/任务）。
 
+## 当前进行中
+
+- **data-003 催收状态机**（in_progress）：OpenSpec change `collection-state-machine` 已生成 4/4 artifacts（proposal/design/specs/tasks），待 `/opsx:apply` 实施
+- 核心改造：Order 新增 `collection_state` 状态机（NO_NEED/PENDING_COLLECTION/COLLECTED/FINALIZED）+ 回填两分类（UNREACHED/REACHED）+ 跑批状态机推进 + 导入预设 + 已支付停催 + 监督员补过滤与进度
+- **BREAKING**：Task.result 枚举从 {PAID/PROMISE/DISPUTE/LOST_CONTACT/OTHER} 改为 {UNREACHED, REACHED}，移除 PROMISE 改期分支
+
 ## 当前已验证
 
-- **全部完成**：MVP 12 功能 + supervisor 增强 + 业务流程简化 + **data-002 导入驱动风险+支付同步**（已归档）
+- **全部完成**：MVP 12 功能 + supervisor 增强 + 业务流程简化 + data-002 导入驱动风险+支付同步（已归档）
 - 最近验证（Session 017-018）：
   - 后端 pytest 全量 **177 passed**（无回归）
   - 前端 `npm run build` 通过
@@ -65,16 +71,17 @@
 
 ## 状态文件位置
 
-- `feature_list.json` — 13 个功能全 passing（含 data-002）
-- `claude-progress.md` — Session 018 记录
+- `feature_list.json` — 13 个功能 passing + data-003 in_progress
+- `claude-progress.md` — Session 019 记录
 - `openspec/specs/` — 3 个 capability 主 specs（固化）
+- `openspec/changes/collection-state-machine/` — data-003 活动 change（4/4 artifacts，待 apply）
 - `openspec/changes/archive/` — data-002 已归档
 
 ## 给下一轮会话的重启路径
 
 1. `pwd` 确认仓库根
-2. 读 `claude-progress.md` 找 Session 018
-3. 读 `feature_list.json` 确认 13 功能 passing，无 in_progress
-4. 检查 `openspec/changes/` 无活动 change（data-002 已归档）
+2. 读 `claude-progress.md` 找 Session 019
+3. 读 `feature_list.json` 确认 data-003 in_progress，其余 13 passing
+4. 检查 `openspec/changes/collection-state-machine/` 活动 change（proposal+design+specs+tasks 已就绪）
 5. `./start.sh` 启动验证基线
-6. 选上面的「下一步可选方向」之一开始
+6. 运行 `/opsx:apply` 实施 data-003（按 tasks.md 9 组步骤）

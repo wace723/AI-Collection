@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`（或 `./start.sh` 快速启动不跑测试）
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`
-- 当前最高优先级未完成功能：**无**（MVP + supervisor 增强 + 业务流程简化 + data-002 导入驱动风险+列表详情改造 全完成并归档）
-- 当前 blocker：无（data-002 已归档，3 capability specs 已固化到主 specs）
+- 当前最高优先级未完成功能：**data-003 催收状态机**（in_progress，OpenSpec change collection-state-machine 已生成 4/4 artifacts，待 /opsx:apply 实施）
+- 当前 blocker：无（规划阶段完成，待实施）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -473,24 +473,34 @@
   - 导入更新只更新支付状态，其他特征字段保持首次导入值
 - 下一步最佳动作：可继续完善（话术模板管理 UI、真实算法替换、PG 迁移、非功能测试）
 
-### Session 018
+### Session 019
 
 - 日期：2026-09-17
-- 本轮目标：完成 data-002 的 7.3（工作台列表+详情改造）+ 归档 change
-- 工具：Claude Code + OpenSpec /opsx:archive + harness 状态同步
+- 本轮目标：规划 data-003 催收状态机改造，用 OpenSpec 生成方案 + harness 登记追踪
+- 工具：Claude Code + OpenSpec（/opsx:propose）+ harness-creator 工作流
+- 需求澄清（4 轮 AskUserQuestion，因 grill-me 技能在本环境调不通，改用 AskUserQuestion 结构化澄清）：
+  - **Order 维护催收状态机**（落库，非推导）：collection_state 四值 NO_NEED/PENDING_COLLECTION/COLLECTED/FINALIZED
+  - **已催收按轮次**：该轮已接通算已催收，等下一轮时点；下一轮时点+仍待支付→回待催收
+  - **回填两分类**：未接通（仍待催收，同日可反复重试）/ 已接通（自由文本反馈，该轮已催收）
+  - **分配档内负载均衡**（现状），跑批**保留未完成任务原 assignee**（隔天还分给他）
+  - **支付状态仅导入更新**（催收员不能改）
+  - **接通后反馈纯文本不分类**
+  - **任务粒度一轮一 Task**（幂等键 order_id+day_offset），多 TaskResult 明细
+  - **导入时按中标日预设**初始状态（已过首轮→待催收，未到→无需催收）
+  - **已支付导入→终态停催**（未完成任务 CANCELLED）
+  - **轮次耗尽→终态**（等支付或人工介入）
+  - **监督员补催收状态过滤+当天完成进度**（已接通/未接通/待处理计数）
 - 已完成：
-  - **7.3 工作台列表+详情改造**：
-    - 后端 TaskOut 加 subject_name/subject_estimate_amount/win_bid_date；OrderBriefOut 扩展标的/品类/支付完整字段；FeatureBriefOut 扩展 A/B/C 三类完整画像字段；api/tasks.py _task_to_out 填充新字段
-    - 前端列表列改为：服务费订单号/标的名称/供应商名称/概算金额/中标日期/风险档/场景/应催日/状态/操作
-    - 前端详情改屏幕中间 Modal（替换右侧 Drawer），宽 1100px 左右两栏：左=订单信息+任务信息+特征画像（A/B/C 三类分类展示所有字段），右=模板话术（默认加载）+AI话术（点击生成后有）+回填按钮
-    - 新建 TaskDetailModal.tsx（左 LeftPanel + 右 RightPanel/TemplateTalkCard/AiTalkCard）
-  - **归档 data-002**：openspec/changes/import-driven-risk-and-payment-sync → archive/2026-09-17-*；3 capability specs（import-payment-sync/data-ingestion/risk-engine）固化到 openspec/specs/（首次归档，delta→主 specs）
-- 运行过的验证：
-  - pytest tests/test_workbench.py tests/test_e2e.py tests/test_data_upload.py → 24 passed
-  - npm run build → tsc + vite build 通过
-  - OpenSpec 4 artifacts done, 32/32 tasks done
+  - OpenSpec change `collection-state-machine` 生成 4/4 artifacts：
+    - proposal.md（why + what + 3 capability：task-engine 新/data-ingestion 改/risk-engine 改）
+    - design.md（6 项决策：D1 状态机四值枚举/D2 回填两分类去 PROMISE/D3 跑批状态机推进+保留 assignee/D4 导入预设初始值/D5 已支付停催终态/D6 监督员增强；含迁移计划与风险权衡）
+    - specs/（3 capability 的 WHEN/THEN 场景：task-engine 7 requirement、data-ingestion 1 added+1 modified、risk-engine 2 modified）
+    - tasks.md（9 组实现步骤：模型迁移→导入预设→跑批推进→分配保留→回填两分类→已支付停催→监督员→前端→测试验证）
+  - harness 登记追踪：feature_list.json 新增 `data-003`（in_progress，关联 OpenSpec change，BREAKING 标注），last_updated→2026-09-17
+- 运行过的验证：无代码改动，仅方案生成（openspec status 4/4 artifacts complete）
 - 已知风险或未解决问题：
-  - 真实 CSV 样本缺「风险概率」列，真实使用需线下算法跑好追加该列后再导入
-  - TaskDetailModal 用 Modal，宽度 1100px 在小屏可能偏挤（可后续响应式优化）
-  - calculator.recalculate_risks 保留函数但跑批不再调用（recalc_risk=False 默认）
-- 下一步最佳动作：data-002 已完整收尾。后续可选：话术模板管理 UI、真实算法替换（需时间切割）、PG 迁移、非功能测试、真实业务 CSV（含风险概率列）灌入验证全流程
+  - **BREAKING**：Task.result 枚举从 {PAID/PROMISE/DISPUTE/LOST_CONTACT/OTHER} 改为 {UNREACHED, REACHED}；移除 PROMISE 改期分支
+  - 现有 Task.result 旧值迁移映射（PAID/DISPUTE/LOST_CONTACT/OTHER→REACHED，PROMISE→UNREACHED）仅历史数据兼容，非业务精确
+  - 轮次耗尽进入 FINALIZED 后不再自动催，需业务方人工跟进（大盘/监督员视图标注待人工介入）
+  - 跑批从「纯生成」变为「推进状态+生成」，需单事务保证原子性
+- 下一步最佳动作：运行 `/opsx:apply` 实施 data-003（按 tasks.md 9 组步骤），实施中同步更新 feature_list.json evidence + claude-progress.md

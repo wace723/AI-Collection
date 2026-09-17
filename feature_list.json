@@ -1,6 +1,6 @@
 {
   "project": "平台使用费 AI 辅助催收系统",
-  "last_updated": "2026-09-16",
+  "last_updated": "2026-09-17",
   "rules": {
     "single_active_feature": true,
     "passing_requires_evidence": true,
@@ -348,6 +348,26 @@
         "前端 Config 拆分两个 Dragger（待支付/已支付）+ api/data.ts uploadPendingCsv/uploadPaidCsv + types Order 加新字段"
       ],
       "notes": "OpenSpec change: openspec/changes/import-driven-risk-and-payment-sync/（proposal+design+specs+tasks 已生成）。BREAKING：旧 37 列 CSV 不兼容；删除 /api/data/upload 和 /api/data/orders/recalc-risk；新增 /upload-pending + /upload-paid。影响 risk-001（MockRiskProvider 废弃但保留抽象）+ data-001（CSV 格式重构）。真实 CSV 样本：平台使用费待支付订单特征查询_2026_09_16.csv（37列→加风险概率38列）、平台使用费已支付订单特征查询_2026_09_16.csv（38列→加风险概率39列）。实施用 /opsx:apply。"
+    },
+    {
+      "id": "data-003",
+      "priority": 14,
+      "area": "task_engine",
+      "title": "催收状态机（Order.collection_state + 两分类回填）",
+      "description": "Order 新增 collection_state 催收状态机（无需催收/待催收/已催收/终态），跑批按各轮 day_offset 推进状态并生成任务；回填结果收敛为「未接通/已接通」两分类，已接通推进该轮已催收；导入按中标日预设初始状态；已支付导入回写终态停催；监督员补催收状态过滤与完成进度。",
+      "dependencies": ["data-002", "task-002", "risk-002"],
+      "status": "in_progress",
+      "verification": [
+        "导入预设 collection_state：已到首轮时点→待催收，未到→无需催收，无配置→无需催收",
+        "跑批按状态机推进：到达轮次时点+待支付→待催收+生成任务，轮次耗尽→终态，已支付跳过",
+        "回填两分类：已接通→Task DONE+Order 已催收，未接通→保持待催收可同日反复",
+        "已支付导入→终态+停催未完成任务 CANCELLED",
+        "分配档内负载均衡+保留未完成任务原 assignee",
+        "监督员按 collection_state 过滤+各催收员当天完成进度计数",
+        "pytest 全量通过 + npm run build 通过 + 真实联调"
+      ],
+      "evidence": [],
+      "notes": "OpenSpec change: openspec/changes/collection-state-machine/（proposal+design+specs+tasks 已生成，4/4 artifacts complete）。BREAKING：Task.result 枚举从 {PAID/PROMISE/DISPUTE/LOST_CONTACT/OTHER} 改为 {UNREACHED, REACHED}；移除 PROMISE 改期分支；Task.status=PROMISE 改期的 PENDING 任务迁移为 IN_PROGRESS。影响 task-001（跑批重构为状态机推进）+ task-002（回填两分类）+ data-001/002（导入预设状态+已支付停催）。Capabilities：task-engine（新）+ data-ingestion（改）+ risk-engine（改）。实施用 /opsx:apply。"
     }
   ]
 }
