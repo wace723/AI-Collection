@@ -4,6 +4,7 @@
 - 终态（DONE/CANCELLED）不可改派
 - 新催收员必须存在、是 COLLECTOR、且 is_active
 - 改派后保持 IN_PROGRESS（不再退回 PENDING，因已去掉领取步骤）
+- data-003：改派不改 Order.collection_state（催收状态由跑批/回填/已支付导入驱动）
 """
 
 from __future__ import annotations

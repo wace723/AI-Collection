@@ -30,9 +30,13 @@ from app.models.task import Task, TaskResult
 from app.models.user import User
 from app.services.talk_engine.matcher import AGE_BUCKETS, map_age_bucket
 
-# 终态结果（PROMISE 是改期非终态，不计入「已处理」）
-_TERMINAL_RESULTS = ("PAID", "DISPUTE", "LOST_CONTACT", "OTHER")
-_PAID = "PAID"
+# data-003：回款口径改为「已接通 REACHED」（替代旧 PAID）；
+# 「已处理」= status=DONE 的任务（REACHED 必转 DONE）。
+from app.services.task_engine.states import DONE as _DONE_STATUS
+from app.services.task_engine.states import REACHED as _PAID
+
+# 终态结果（data-003 后只有 REACHED 为终态回填结果）
+_TERMINAL_RESULTS = ("REACHED",)
 
 # 风险档固定顺序（输出稳定）
 _TIER_KEYS = ("HIGH", "MEDIUM", "LOW", "NONE")

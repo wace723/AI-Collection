@@ -36,13 +36,14 @@ class Task(Base, CreatedAtMixin):
     scene: Mapped[str] = mapped_column(String(16))
     day_offset: Mapped[int] = mapped_column(Integer)
     due_date: Mapped[date] = mapped_column(Date, index=True)
-    # PENDING_ASSIGN / PENDING / IN_PROGRESS / DONE / CANCELLED
+    # PENDING_ASSIGN / IN_PROGRESS / DONE / CANCELLED
     status: Mapped[str] = mapped_column(String(16), default="PENDING_ASSIGN", index=True)
     assignee_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=True
     )
     assigned_at: Mapped[datetime | None] = mapped_column(DateTime)
-    # PAID / PROMISE / DISPUTE / LOST_CONTACT / OTHER
+    # 回填结果两分类（data-003，BREAKING）：UNREACHED（未接通）/ REACHED（已接通）
+    # 详见 app/services/task_engine/states.py
     result: Mapped[str | None] = mapped_column(String(16))
     result_note: Mapped[str | None] = mapped_column(Text)
     next_followup_date: Mapped[date | None] = mapped_column(Date)

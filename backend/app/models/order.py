@@ -60,6 +60,11 @@ class Order(Base, TimestampMixin):
     risk_prob: Mapped[float | None] = mapped_column(DECIMAL(5, 2))
     risk_tier: Mapped[str | None] = mapped_column(String(8))
     risk_import_time: Mapped[datetime | None] = mapped_column(DateTime)
+    # 催收状态机（data-003）：NO_NEED/PENDING_COLLECTION/COLLECTED/FINALIZED
+    # 详见 app/services/task_engine/states.py
+    collection_state: Mapped[str] = mapped_column(
+        String(24), default="NO_NEED", nullable=False, index=True
+    )
 
 
 class OrderFeature(Base):

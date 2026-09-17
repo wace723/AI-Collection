@@ -15,11 +15,18 @@ interface Props {
 
 const riskColor: Record<string, string> = { HIGH: 'red', MEDIUM: 'orange', LOW: 'blue' }
 const statusLabel: Record<string, string> = {
-  PENDING_ASSIGN: '待分配', PENDING: '待处理', IN_PROGRESS: '处理中',
+  PENDING_ASSIGN: '待分配', IN_PROGRESS: '处理中',
   DONE: '已完成', CANCELLED: '已取消',
 }
 const sceneLabel = (s: string) =>
-  ({ FIRST: '首次', SECOND: '二次', THIRD: '三次', DISPUTE: '异议', PROMISE: '承诺' } as Record<string, string>)[s] ?? s
+  ({ FIRST: '首次', SECOND: '二次', THIRD: '三次' } as Record<string, string>)[s] ?? s
+
+const collectionStateLabel: Record<string, string> = {
+  NO_NEED: '无需催收',
+  PENDING_COLLECTION: '待催收',
+  COLLECTED: '已催收',
+  FINALIZED: '终态',
+}
 
 /** 任务详情 Modal：左右两栏（左=订单/任务/特征，右=模板话术+AI话术） */
 export default function TaskDetailModal({ open, detail, loading, onClose, onResult }: Props) {
@@ -80,7 +87,9 @@ function LeftPanel({ detail }: { detail: TaskDetail }) {
         <Descriptions.Item label="应催日">{detail.due_date}</Descriptions.Item>
         <Descriptions.Item label="状态"><Tag>{statusLabel[detail.status] ?? detail.status}</Tag></Descriptions.Item>
         <Descriptions.Item label="批次号">{detail.batch_id}</Descriptions.Item>
-        <Descriptions.Item label="下次跟进">{detail.next_followup_date ?? '-'}</Descriptions.Item>
+        <Descriptions.Item label="催收状态">
+          <Tag>{collectionStateLabel[detail.collection_state] ?? detail.collection_state}</Tag>
+        </Descriptions.Item>
         {detail.result && (
           <Descriptions.Item label="处理结果" span={2}>{detail.result}{detail.result_note ? `（${detail.result_note}）` : ''}</Descriptions.Item>
         )}

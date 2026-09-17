@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   Button,
   Card,
-  DatePicker,
   Form,
   Input,
   Modal,
@@ -14,7 +13,6 @@ import {
   message,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import dayjs from 'dayjs'
 import {
   getMe,
   getTask,
@@ -37,32 +35,41 @@ const PAGE_SIZE = 10
 
 const statusOptions = [
   { label: '全部', value: '' },
-  { label: '待处理', value: 'PENDING' },
+  { label: '待分配', value: 'PENDING_ASSIGN' },
   { label: '处理中', value: 'IN_PROGRESS' },
   { label: '已完成', value: 'DONE' },
-  { label: '待分配', value: 'PENDING_ASSIGN' },
   { label: '已取消', value: 'CANCELLED' },
 ]
 
 const resultOptions: { label: string; value: TaskResultType }[] = [
-  { label: '已结清 (PAID)', value: 'PAID' },
-  { label: '承诺还款 (PROMISE)', value: 'PROMISE' },
-  { label: '异议 (DISPUTE)', value: 'DISPUTE' },
-  { label: '失联 (LOST_CONTACT)', value: 'LOST_CONTACT' },
-  { label: '其他 (OTHER)', value: 'OTHER' },
+  { label: '已接通 (REACHED)', value: 'REACHED' },
+  { label: '未接通 (UNREACHED)', value: 'UNREACHED' },
 ]
+
+const collectionStateLabel: Record<string, string> = {
+  NO_NEED: '无需催收',
+  PENDING_COLLECTION: '待催收',
+  COLLECTED: '已催收',
+  FINALIZED: '终态',
+}
+const collectionStateColor: Record<string, string> = {
+  NO_NEED: 'default',
+  PENDING_COLLECTION: 'gold',
+  COLLECTED: 'green',
+  FINALIZED: 'default',
+}
 
 const riskColor: Record<string, string> = { HIGH: 'red', MEDIUM: 'orange', LOW: 'blue' }
 const statusColor: Record<string, string> = {
-  PENDING_ASSIGN: 'default', PENDING: 'blue', IN_PROGRESS: 'gold',
+  PENDING_ASSIGN: 'default', IN_PROGRESS: 'gold',
   DONE: 'green', CANCELLED: 'default',
 }
 const statusLabel: Record<string, string> = {
-  PENDING_ASSIGN: '待分配', PENDING: '待处理', IN_PROGRESS: '处理中',
+  PENDING_ASSIGN: '待分配', IN_PROGRESS: '处理中',
   DONE: '已完成', CANCELLED: '已取消',
 }
 const sceneLabel = (s: string) =>
-  ({ FIRST: '首次', SECOND: '二次', THIRD: '三次', DISPUTE: '异议', PROMISE: '承诺' } as Record<string, string>)[s] ?? s
+  ({ FIRST: '首次', SECOND: '二次', THIRD: '三次' } as Record<string, string>)[s] ?? s
 
 export default function Workbench() {
   const [user, setUser] = useState<User | null>(null)
@@ -140,9 +147,6 @@ export default function Workbench() {
       result: values.result as TaskResultType,
       note: values.note,
     }
-    if (values.result === 'PROMISE' && values.next_followup_date) {
-      payload.next_followup_date = dayjs(values.next_followup_date).format('YYYY-MM-DD')
-    }
     setSubmitting(true)
     try {
       await submitTaskResult(resultTask.id, payload)
@@ -174,6 +178,14 @@ export default function Workbench() {
     { title: '场景', dataIndex: 'scene', width: 80, render: (v: string) => sceneLabel(v) },
     { title: '应催日', dataIndex: 'due_date', width: 120 },
     {
+      title: '催收状态', dataIndex: 'collection_state', width: 100,
+      render: (v: string) => (
+        <Tag color={collectionStateColor[v] ?? 'default'}>
+          {collectionStateLabel[v] ?? v}
+        </Tag>
+      ),
+    },
+    {
       title: '状态', dataIndex: 'status', width: 100,
       render: (v: string) => <Tag color={statusColor[v]}>{statusLabel[v] ?? v}</Tag>,
     },
@@ -182,7 +194,7 @@ export default function Workbench() {
       render: (_: unknown, t: Task) => (
         <Space>
           <Button size="small" onClick={() => openDetail(t)}>详情</Button>
-          {(t.status === 'PENDING' || t.status === 'IN_PROGRESS') && (
+          {t.status === 'IN_PROGRESS' && (
             <Button size="small" type="primary" onClick={() => openResult(t)}>回填</Button>
           )}
         </Space>
@@ -242,17 +254,25 @@ export default function Workbench() {
           <Form.Item label="处理结果" name="result" rules={[{ required: true, message: '请选择处理结果' }]}>
             <Select options={resultOptions} placeholder="选择处理结果" />
           </Form.Item>
-          <Form.Item noStyle shouldUpdate={(prev, cur) => prev.result !== cur.result}>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, cur) => prev.result !== cur.result}
+          >
             {({ getFieldValue }) =>
-              getFieldValue('result') === 'PROMISE' ? (
-                <Form.Item label="承诺还款日" name="next_followup_date" rules={[{ required: true, message: '承诺还款需选择日期' }]}>
-                  <DatePicker style={{ width: '100%' }} />
+              getFieldValue('result') === 'REACHED' ? (
+                <Form.Item
+                  label="反馈内容"
+                  name="note"
+                  rules={[{ required: true, message: '已接通需填写反馈内容' }]}
+                >
+                  <Input.TextArea rows={3} placeholder="填写与客户的沟通情况" />
                 </Form.Item>
-              ) : null
+              ) : (
+                <Form.Item label="备注" name="note">
+                  <Input.TextArea rows={3} placeholder="处理说明（可选）" />
+                </Form.Item>
+              )
             }
-          </Form.Item>
-          <Form.Item label="备注" name="note">
-            <Input.TextArea rows={3} placeholder="处理说明（可选）" />
           </Form.Item>
         </Form>
       </Modal>

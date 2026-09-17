@@ -12,12 +12,13 @@ from __future__ import annotations
 import csv
 import io
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.models.order import Order, OrderFeature
+from app.models.task import Task
 from app.services.data_ingestion.columns import (
     EXTRA_FEATURE_COLUMNS,
     FEATURE_FIELD_MAP,
@@ -31,7 +32,13 @@ from app.services.data_ingestion.columns import (
     _is_int_field,
 )
 from app.services.data_ingestion.encoding import EncodingError, detect_and_decode
+from app.services.risk_engine.config_service import get_current_config
 from app.services.risk_engine.tier_mapper import get_active_thresholds, map_tier
+from app.services.task_engine.states import (
+    FINALIZED,
+    NO_NEED,
+    PENDING_COLLECTION,
+)
 
 
 class CSVParseError(ValueError):
@@ -175,6 +182,38 @@ def _map_risk_tier(db: Session, risk_prob: float | None) -> str | None:
     return map_tier(risk_prob, thresholds)
 
 
+def _initial_collection_state(
+    db: Session,
+    *,
+    risk_tier: str | None,
+    win_bid_date: date | None,
+    today: date,
+) -> str:
+    """导入时按中标日 + 首轮 day_offset 预设 Order.collection_state 初始值。
+
+    - 已支付由已支付导入回写为 FINALIZED（本函数仅处理待支付新订单）
+    - 有 risk_tier + 有生效配置 + win_bid_date + 首轮 day_offset 已到 today → PENDING_COLLECTION
+    - 否则（未到首轮/无 risk_tier/无配置/无中标日）→ NO_NEED
+    """
+    if not risk_tier or win_bid_date is None:
+        return NO_NEED
+    snap = get_current_config(db)
+    if snap is None:
+        return NO_NEED
+    # 取该 risk_tier 的首轮 day_offset（最小值）
+    first_offsets = [
+        s.day_offset
+        for s in snap.schedules
+        if s.risk_tier == risk_tier and s.is_active
+    ]
+    if not first_offsets:
+        return NO_NEED
+    first_day_offset = min(first_offsets)
+    if win_bid_date + timedelta(days=first_day_offset) <= today:
+        return PENDING_COLLECTION
+    return NO_NEED
+
+
 def parse_csv_text(text: str, expected: tuple[str, ...]) -> list[dict[str, str]]:
     """解析 CSV 文本为行列表（dict: 列名→原始字符串值）。
 
@@ -199,12 +238,16 @@ def parse_csv_text(text: str, expected: tuple[str, ...]) -> list[dict[str, str]]
 # ── 待支付订单导入 ────────────────────────────────────────────────
 
 
-def ingest_pending_rows(db: Session, rows: list[dict[str, str]]) -> UploadResult:
+def ingest_pending_rows(
+    db: Session, rows: list[dict[str, str]], *, today: date | None = None
+) -> UploadResult:
     """待支付订单导入（全量/增量共用）。
 
-    新订单：入库未支付订单 + 特征 + 风险概率（经阈值映射档位）。
-    重复订单（service_fee_order_no 已存在）：更新风险概率 + 特征 + 标的等字段。
+    新订单：入库未支付订单 + 特征 + 风险概率（经阈值映射档位）+ 预设 collection_state。
+    重复订单（service_fee_order_no 已存在）：更新风险概率 + 特征 + 标的等字段，
+    不改 collection_state（状态由跑批/回填/已支付导入驱动）。
     """
+    resolved_today = today or date.today()
     inserted = 0
     skipped = 0
     updated = 0
@@ -229,7 +272,8 @@ def ingest_pending_rows(db: Session, rows: list[dict[str, str]]) -> UploadResult
             .first()
         )
         if existing is not None:
-            # 重复订单：更新风险概率 + 特征 + 标的字段（非跳过）
+            # 重复订单：更新风险概率 + 特征 + 标的字段（非跳过）。
+            # 不改 collection_state（状态由跑批/回填/已支付导入驱动）。
             for attr, val in order_fields.items():
                 if attr == "service_fee_order_no":
                     continue
@@ -256,6 +300,13 @@ def ingest_pending_rows(db: Session, rows: list[dict[str, str]]) -> UploadResult
         order = Order(**order_fields)
         order.risk_tier = _map_risk_tier(db, risk_prob)
         order.risk_import_time = datetime.utcnow() if risk_prob is not None else None
+        # 预设催收状态：按中标日 + 首轮 day_offset 判断
+        order.collection_state = _initial_collection_state(
+            db,
+            risk_tier=order.risk_tier,
+            win_bid_date=order.win_bid_date,
+            today=resolved_today,
+        )
         db.add(order)
         db.flush()
 
@@ -312,6 +363,19 @@ def ingest_paid_rows(db: Session, rows: list[dict[str, str]]) -> UploadResult:
             existing.pay_time = pay_time
         if actual_duration is not None:
             existing.actual_pay_duration_days = actual_duration
+        # data-003：已支付 → 催收状态终态停催，未完成任务 CANCELLED
+        existing.collection_state = FINALIZED
+        open_tasks = (
+            db.query(Task)
+            .filter(
+                Task.order_id == existing.id,
+                Task.status.in_(("PENDING_ASSIGN", "IN_PROGRESS")),
+            )
+            .all()
+        )
+        for t in open_tasks:
+            t.status = "CANCELLED"
+            t.result_note = "已支付停催"
         updated += 1
 
     db.commit()

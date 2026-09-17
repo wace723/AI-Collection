@@ -21,6 +21,7 @@ from app.services.task_engine.batch import (
 from app.services.task_engine.reassign import reassign_task
 from app.services.task_engine.state import (
     TaskNotFoundError,
+    TaskPermissionError,
     TaskStateError,
     claim_task,
     submit_result,
@@ -35,6 +36,7 @@ __all__ = [
     "AssignmentError",
     "assign_pending_tasks",
     "TaskNotFoundError",
+    "TaskPermissionError",
     "TaskStateError",
     "claim_task",
     "submit_result",

@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`（或 `./start.sh` 快速启动不跑测试）
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`
-- 当前最高优先级未完成功能：**data-003 催收状态机**（in_progress，OpenSpec change collection-state-machine 已生成 4/4 artifacts，待 /opsx:apply 实施）
-- 当前 blocker：无（规划阶段完成，待实施）
+- 当前最高优先级未完成功能：**无**（MVP + supervisor 增强 + 业务流程简化 + data-002 导入驱动风险 + data-003 催收状态机 全完成）
+- 当前 blocker：无（data-003 已完成，186 passed + 真实联调通过，待归档）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -504,3 +504,31 @@
   - 轮次耗尽进入 FINALIZED 后不再自动催，需业务方人工跟进（大盘/监督员视图标注待人工介入）
   - 跑批从「纯生成」变为「推进状态+生成」，需单事务保证原子性
 - 下一步最佳动作：运行 `/opsx:apply` 实施 data-003（按 tasks.md 9 组步骤），实施中同步更新 feature_list.json evidence + claude-progress.md
+
+### Session 020
+
+- 日期：2026-09-17
+- 本轮目标：实施 data-003 催收状态机（用 /opsx:apply 走 OpenSpec tasks）
+- 工具：Claude Code + OpenSpec /opsx:apply + 2 个并行 Agent（test_dashboard/test_task_assignment 重写）+ harness 状态同步
+- 已完成（9 组 50 task 全勾选）：
+  - 第1组 模型与迁移：Order 新增 collection_state（NO_NEED/PENDING_COLLECTION/COLLECTED/FINALIZED，默认 NO_NEED 非空 index）；新建 states.py 集中枚举常量；Task.result 注释重定义；Alembic 迁移 8b15c0d3e7a9（加字段+数据回填：Order 按 win_bid_date+首轮 day_offset 回填状态、Task.result 旧值映射 PAID/DISPUTE/LOST_CONTACT/OTHER→REACHED/PROMISE→UNREACHED、Task.status PENDING→IN_PROGRESS）
+  - 第2组 导入预设：parser.py _initial_collection_state 辅助函数（win_bid+首轮 day_offset<=today→PENDING_COLLECTION，否则 NO_NEED）；ingest_pending_rows 新订单预设状态、重复导入不改状态
+  - 第3组 跑批状态机推进：batch.py 重构 generate_tasks——扫描 NO_NEED/COLLECTED+待支付订单，按各轮 day_offset 推进 PENDING_COLLECTION+生成当轮 Task（每次只推进下一未催轮次），轮次耗尽→FINALIZED；BatchResult 加 finalized 字段
+  - 第4组 分配保留 assignee：assignment.py 保持档内负载均衡（现有逻辑），IN_PROGRESS 任务保留原 assignee 不回分配池
+  - 第5组 回填两分类：state.py 重写 submit_result——REACHED→Task DONE+Order COLLECTED；UNREACHED→保持 IN_PROGRESS+PENDING_COLLECTION（同日可反复）；新增 TaskPermissionError（越权 403 独立于 TaskStateError 409），_ensure_operator 提前到状态检查前
+  - 第6组 已支付停催：parser.py ingest_paid_rows 回写 pay_status=PAID 时同步 collection_state=FINALIZED，未完成任务（PENDING_ASSIGN/IN_PROGRESS）→CANCELLED 标注「已支付停催」
+  - 第7组 监督员增强：api/tasks.py list_tasks 加 collection_state 过滤参数（join Order）；supervisor_service.py 扩展 today_reached/today_unreached/today_pending 计数；reassign.py 加注释保持 collection_state 不变
+  - 第8组 前端：Workbench resultOptions 改两分类、回填表单去掉 PROMISE 改期日改「已接通反馈内容」、列表加催收状态列、去 dayjs/DatePicker import；TaskDetailModal 去下次跟进改催收状态展示；Supervisor StaffTab 加当天三计数列；types/api.ts TaskResultType 改 UNREACHED/REACHED、加 CollectionState 类型、TaskResultInput 去 next_followup_date、StaffPerformance 加三计数字段；dashboard metrics.py 回款口径改 REACHED
+  - 第9组 测试与验证：test_task_generation(23)/test_workbench(14)/test_e2e(3)/test_reassign(12)/test_supervisor(6) 重写适配状态机+两分类；test_dashboard(12)/test_task_assignment(11) 由并行 Agent 重写
+- 运行过的验证：
+  - pytest -q 全量 → **186 passed**（177→186，无回归）
+  - npm run build → tsc + vite build 通过
+  - alembic upgrade head → data-003 迁移成功
+  - 真实联调（/e/tmp/verify_data003_e2e.py，dev.db+真实uvicorn）：待支付导入预设 PENDING_COLLECTION→重置 NO_NEED→跑批推进 generated=1→分配→回填 REACHED→DONE+COLLECTED→已支付导入→FINALIZED+PAID ✓
+  - OpenSpec 4 artifacts done, 50/50 tasks done
+- 已知风险或未解决问题：
+  - 真实 CSV 样本缺「风险概率」列（沿用 data-002 遗留），真实使用需线下算法跑好追加该列
+  - 现有 Task.result 旧值迁移映射仅历史数据兼容（PAID/DISPUTE/LOST_CONTACT/OTHER→REACHED，非业务精确）
+  - 轮次耗尽 FINALIZED 后不再自动催，需业务方人工跟进
+  - grill-me 技能在本环境调不通（依赖外部 OpenAI agent 运行时），本次用 AskUserQuestion 4 轮澄清替代
+- 下一步最佳动作：data-003 已完整收尾。可 /opsx:archive 归档；后续可选：真实算法替换、PG 迁移、非功能测试、真实业务 CSV 灌入验证

@@ -2,6 +2,12 @@
 
 覆盖 docs/03 TC-TASK-09/10/11/12 + 幂等不重复分配 + 权限边界。
 分配核心逻辑直接调 service 注入控制；状态机走 API 端到端。
+
+data-003 改造（BREAKING）后适配：
+- 回填结果两分类 REACHED/UNREACHED（移除 PAID/PROMISE/DISPUTE/LOST_CONTACT/OTHER）
+- Task.status 移除 PENDING 改期态（保留 PENDING_ASSIGN/IN_PROGRESS/DONE/CANCELLED）
+- 越权回填他人任务 → 403（TaskPermissionError，独立异常类型）
+- 终态不可再回填 → 409（TaskStateError）
 """
 
 from __future__ import annotations
@@ -189,19 +195,22 @@ def test_assign_order_high_before_medium(db_session, seed_users, seed_risk_confi
 
 
 def test_assign_to_lowest_load(db_session, seed_users, seed_risk_config):
-    """U1 已 5、U2 已 4、U3 已 0 待处理 → 新任务分给 U3。"""
+    """U1 已 5、U2 已 4、U3 已 0 待处理 → 新任务分给 U3。
+
+    data-003 后 PENDING 改期态已移除，已分配任务统一用 IN_PROGRESS 构造负载。
+    """
     cols = _collectors(db_session)
     o_base = _make_order(db_session, "BASE", date(2026, 8, 15), "HIGH")
-    # 给 U1 5 个 PENDING、U2 4 个、U3 0 个
+    # 给 U1 5 个 IN_PROGRESS、U2 4 个、U3 0 个
     for i in range(5):
         _make_task(
             db_session, o_base, risk_tier="HIGH", due_date=date(2026, 9, 7),
-            status="PENDING", assignee_id=cols[0].id, day_offset=7 + i,
+            status="IN_PROGRESS", assignee_id=cols[0].id, day_offset=7 + i,
         )
     for i in range(4):
         _make_task(
             db_session, o_base, risk_tier="HIGH", due_date=date(2026, 9, 7),
-            status="PENDING", assignee_id=cols[1].id, day_offset=100 + i,
+            status="IN_PROGRESS", assignee_id=cols[1].id, day_offset=100 + i,
         )
     # 一个新 PENDING_ASSIGN 待分配
     o_new = _make_order(db_session, "NEW", date(2026, 8, 15), "HIGH")
@@ -220,11 +229,14 @@ def test_assign_to_lowest_load(db_session, seed_users, seed_risk_config):
 
 
 def test_already_assigned_not_reassigned(db_session, seed_users, seed_risk_config):
-    """已 PENDING/IN_PROGRESS/DONE 的任务不会被再次分配。"""
+    """已 IN_PROGRESS/DONE 的任务不会被再次分配。
+
+    data-003 后 PENDING 改期态移除；已分配任务统一为 IN_PROGRESS。
+    """
     cols = _collectors(db_session)
     o = _make_order(db_session, "X", date(2026, 8, 15), "HIGH")
     _make_task(db_session, o, risk_tier="HIGH", due_date=date(2026, 9, 7),
-               status="PENDING", assignee_id=cols[0].id, day_offset=7)
+               status="IN_PROGRESS", assignee_id=cols[0].id, day_offset=7)
     _make_task(db_session, o, risk_tier="HIGH", due_date=date(2026, 9, 7),
                status="IN_PROGRESS", assignee_id=cols[1].id, day_offset=15)
     _make_task(db_session, o, risk_tier="HIGH", due_date=date(2026, 9, 7),
@@ -263,11 +275,14 @@ def test_no_collectors_returns_skipped(db_session, seed_users, seed_risk_config)
     assert result.skipped == 1
 
 
-# ── TC-TASK-11：状态机流转 PENDING_ASSIGN→PENDING→IN_PROGRESS→DONE ──
+# ── TC-TASK-11：状态机流转 PENDING_ASSIGN→IN_PROGRESS→DONE ────────
 
 
 def test_state_machine_flow_via_api(client, db_session, seed_users, seed_risk_config):
-    """分配 → 回填 PAID → DONE；终态不可再操作。"""
+    """分配 → 回填 REACHED → DONE；终态不可再操作。
+
+    data-003 两分类：REACHED（已接通）→ Task=DONE 终态、Order=COLLECTED。
+    """
     o = _make_order(db_session, "FLOW", date(2026, 8, 15), "HIGH")
     task = _make_task(db_session, o, risk_tier="HIGH", due_date=date(2026, 9, 7))
     db_session.commit()
@@ -284,29 +299,41 @@ def test_state_machine_flow_via_api(client, db_session, seed_users, seed_risk_co
     assignee = task.assignee_id
     assignee_name = next(c.username for c in cols if c.id == assignee)
 
-    # 回填 PAID → DONE
+    # 回填 REACHED → DONE（已接通，该轮已催收）
     resp = client.post(
         f"/api/tasks/{task.id}/result",
-        json={"result": "PAID", "note": "已结清"},
+        json={"result": "REACHED", "note": "已接通，承诺付款"},
         headers=_headers(client, assignee_name),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()["data"]
     assert body["status"] == "DONE"
-    assert body["result"] == "PAID"
+    assert body["result"] == "REACHED"
 
     # 写入 TaskResult 明细
     rows = db_session.query(TaskResult).filter(TaskResult.task_id == task.id).all()
     assert len(rows) == 1
-    assert rows[0].result == "PAID"
+    assert rows[0].result == "REACHED"
+
+    # 终态不可再回填 → 409（TaskStateError）
+    resp = client.post(
+        f"/api/tasks/{task.id}/result",
+        json={"result": "REACHED", "note": "再次回填"},
+        headers=_headers(client, assignee_name),
+    )
+    assert resp.status_code == 409
 
 
-# ── TC-TASK-12：承诺还款触发改期 ───────────────────────────────────
+# ── TC-TASK-12：未接通保持 IN_PROGRESS（同日可反复回填）──────────────
 
 
-def test_promise_result_reschedules(client, db_session, seed_users, seed_risk_config):
-    """result=PROMISE + next_followup_date → 任务回 IN_PROGRESS；缺失改期日 → 409。"""
-    o = _make_order(db_session, "PROM", date(2026, 8, 15), "HIGH")
+def test_unreached_keeps_in_progress(client, db_session, seed_users, seed_risk_config):
+    """回填 UNREACHED → Task 保持 IN_PROGRESS，可同日反复回填；不接 next_followup_date。
+
+    data-003 移除 PROMISE 改期分支：UNREACHED 不改期、不改状态，
+    仅写一条 TaskResult 明细，催收员同日可反复重试直到 REACHED 或进入下一轮。
+    """
+    o = _make_order(db_session, "UNR", date(2026, 8, 15), "HIGH")
     task = _make_task(db_session, o, risk_tier="HIGH", due_date=date(2026, 9, 7))
     db_session.commit()
 
@@ -317,47 +344,63 @@ def test_promise_result_reschedules(client, db_session, seed_users, seed_risk_co
         c.username for c in _collectors(db_session) if c.id == task.assignee_id
     )
 
-    # PROMISE 缺改期日 → 409
+    # 第一次回填 UNREACHED → 仍 IN_PROGRESS
     resp = client.post(
         f"/api/tasks/{task.id}/result",
-        json={"result": "PROMISE"},
-        headers=_headers(client, assignee_name),
-    )
-    assert resp.status_code == 409
-
-    # PROMISE 带改期日 → IN_PROGRESS + next_followup_date（保留 assignee，承诺日再催）
-    followup = (date.today() + timedelta(days=7)).isoformat()
-    resp = client.post(
-        f"/api/tasks/{task.id}/result",
-        json={"result": "PROMISE", "next_followup_date": followup, "note": "承诺下周还"},
+        json={"result": "UNREACHED", "note": "无人接听"},
         headers=_headers(client, assignee_name),
     )
     assert resp.status_code == 200, resp.text
     body = resp.json()["data"]
     assert body["status"] == "IN_PROGRESS"
-    assert body["next_followup_date"] == followup
+    assert body["result"] == "UNREACHED"
+    # data-003 移除改期：next_followup_date 不再被设置
+    assert body["next_followup_date"] is None
+
+    # 同日再次回填 UNREACHED → 仍 200，状态仍 IN_PROGRESS（同日可反复重试）
+    resp = client.post(
+        f"/api/tasks/{task.id}/result",
+        json={"result": "UNREACHED", "note": "再次无人接听"},
+        headers=_headers(client, assignee_name),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["status"] == "IN_PROGRESS"
+
+    # 两次回填各写一条 TaskResult 明细
+    rows = db_session.query(TaskResult).filter(TaskResult.task_id == task.id).all()
+    assert len(rows) == 2
+    assert all(r.result == "UNREACHED" for r in rows)
+
+    # 之后回填 REACHED → DONE 终态
+    resp = client.post(
+        f"/api/tasks/{task.id}/result",
+        json={"result": "REACHED", "note": "接通并承诺付款"},
+        headers=_headers(client, assignee_name),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["status"] == "DONE"
 
 
 # ── 权限边界 ────────────────────────────────────────────────────────
 
 
 def test_collector_cannot_result_others_task(client, db_session, seed_users, seed_risk_config):
-    """COLLECTOR 不能回填分配给别人的任务 → 409。"""
+    """COLLECTOR 不能回填分配给别人的任务 → 403（TaskPermissionError，data-003）。"""
     o = _make_order(db_session, "OTHER", date(2026, 8, 15), "HIGH")
     task = _make_task(db_session, o, risk_tier="HIGH", due_date=date(2026, 9, 7))
     db_session.commit()
     client.post("/api/tasks/assign/run", headers=_headers(client, "admin"))
     db_session.expire_all()
     task = db_session.get(Task, task.id)
-    # task 的 assignee 是某 collector，用另一个 collector 登录回填 → 409
+    # task 的 assignee 是某 collector，用另一个 collector 登录回填 → 403
     cols = _collectors(db_session)
     other = next(c for c in cols if c.id != task.assignee_id)
     resp = client.post(
         f"/api/tasks/{task.id}/result",
-        json={"result": "PAID"},
+        json={"result": "REACHED"},
         headers=_headers(client, other.username),
     )
-    assert resp.status_code == 409
+    assert resp.status_code == 403
 
 
 def test_assign_requires_admin(client, seed_users, seed_risk_config):

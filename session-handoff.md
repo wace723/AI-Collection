@@ -4,20 +4,51 @@
 > 本仓库由 Claude Code（`CLAUDE.md`）与 CodeBuddy（`CODEBUDDY.md`）共用一套 harness 工件开发。
 > 遵守两套规范：harness-creator（状态追踪/会话连续/验证门槛）+ OpenSpec（变更提案/spec/任务）。
 
-## 当前进行中
-
-- **data-003 催收状态机**（in_progress）：OpenSpec change `collection-state-machine` 已生成 4/4 artifacts（proposal/design/specs/tasks），待 `/opsx:apply` 实施
-- 核心改造：Order 新增 `collection_state` 状态机（NO_NEED/PENDING_COLLECTION/COLLECTED/FINALIZED）+ 回填两分类（UNREACHED/REACHED）+ 跑批状态机推进 + 导入预设 + 已支付停催 + 监督员补过滤与进度
-- **BREAKING**：Task.result 枚举从 {PAID/PROMISE/DISPUTE/LOST_CONTACT/OTHER} 改为 {UNREACHED, REACHED}，移除 PROMISE 改期分支
-
 ## 当前已验证
 
-- **全部完成**：MVP 12 功能 + supervisor 增强 + 业务流程简化 + data-002 导入驱动风险+支付同步（已归档）
-- 最近验证（Session 017-018）：
-  - 后端 pytest 全量 **177 passed**（无回归）
+- **全部完成**：MVP 12 功能 + supervisor 增强 + 业务流程简化 + data-002 导入驱动风险+支付同步 + **data-003 催收状态机**（已验证，待归档）
+- 最近验证（Session 020）：
+  - 后端 pytest 全量 **186 passed**（无回归）
   - 前端 `npm run build` 通过
-  - 真实联调：待支付导入(风险概率75→HIGH)→跑批+分配→已支付导入回写(pay_status=PAID) ✓
-  - OpenSpec data-002 归档完成，3 capability specs 固化到 `openspec/specs/`
+  - 真实联调：待支付导入(预设PENDING_COLLECTION)→跑批推进→分配→回填REACHED→COLLECTED→已支付导入→FINALIZED停催 ✓
+  - OpenSpec collection-state-machine 50/50 tasks done，待归档
+
+## 本轮改动总结（data-003 催收状态机）
+
+- Order 新增 `collection_state` 状态机（NO_NEED/PENDING_COLLECTION/COLLECTED/FINALIZED）
+- 跑批重构为状态机推进：扫描 NO_NEED/COLLECTED+待支付，按各轮 day_offset 推进 PENDING_COLLECTION+生成当轮 Task，轮次耗尽→FINALIZED
+- 回填两分类（BREAKING）：UNREACHED（未接通，保持待催收可同日反复）/ REACHED（已接通，Task DONE+Order COLLECTED），替代旧五分类，移除 PROMISE 改期分支
+- 导入预设状态：待支付导入按 win_bid+首轮 day_offset 预设 PENDING_COLLECTION/NO_NEED
+- 已支付导入→FINALIZED 停催（未完成任务 CANCELLED 标注「已支付停催」）
+- 监督员增强：collection_state 过滤 + 各催收员当天已接通/未接通/待处理计数
+- 分配档内负载均衡，跑批保留未完成任务原 assignee（隔天还分给他）
+- 迁移 8b15c0d3e7a9：Order 加字段 + 数据回填（旧 Task.result 映射、PENDING→IN_PROGRESS）
+
+## 仍损坏或未验证
+
+- 已知缺陷：无
+- 未验证路径：无（data-003 已完整收尾，待 /opsx:archive 归档）
+- 风险/遗留：
+  - 真实 CSV 样本缺「风险概率」列（沿用 data-002 遗留），真实使用需线下算法跑好追加
+  - 现有 Task.result 旧值迁移映射仅历史兼容（非业务精确）
+  - 轮次耗尽 FINALIZED 后不再自动催，需业务方人工跟进
+  - grill-me 技能在本环境调不通（依赖外部 OpenAI agent 运行时）
+
+## 下一步可选方向（按价值/紧迫度）
+
+**第一档 · 收尾 + 让系统真正用起来**
+1. `/opsx:archive` 归档 collection-state-machine change（3 capability specs 固化到主 specs）
+2. 真实 CSV（含风险概率列）灌入验证全流程：上传待支付→跑批→分配→催收→回填→已支付导入回写→大盘
+3. 真实 LLM 调通体验优化（glm 响应 40s，可加流式 SSE）
+
+**第二档 · 上生产前硬骨头**
+4. 真实风险算法替换（需时间切割防数据泄漏）——当前风险概率从 CSV 来，算法由线下做
+5. PostgreSQL 迁移 + 时区统一（dash-001 review 记录的 H-2）
+
+**第三档 · 体验/功能补全**
+6. 话术模板管理 UI（当前只有 seed 默认模板，后台不能增删改）
+7. 主管手动改派已有（F-TASK-04），可补任务转派历史/审计
+8. 非功能测试（TC-NF-01/02 跑批性能 10000 笔≤5min、工作台列表≤2s）
 
 ## 本轮改动总结（data-002，已归档）
 
@@ -71,17 +102,17 @@
 
 ## 状态文件位置
 
-- `feature_list.json` — 13 个功能 passing + data-003 in_progress
-- `claude-progress.md` — Session 019 记录
-- `openspec/specs/` — 3 个 capability 主 specs（固化）
-- `openspec/changes/collection-state-machine/` — data-003 活动 change（4/4 artifacts，待 apply）
+- `feature_list.json` — 14 个功能全 passing（含 data-003）
+- `claude-progress.md` — Session 020 记录
+- `openspec/specs/` — 3 个 capability 主 specs（固化，data-003 归档后 +1 task-engine）
+- `openspec/changes/collection-state-machine/` — data-003 活动 change（50/50 tasks done，待归档）
 - `openspec/changes/archive/` — data-002 已归档
 
 ## 给下一轮会话的重启路径
 
 1. `pwd` 确认仓库根
-2. 读 `claude-progress.md` 找 Session 019
-3. 读 `feature_list.json` 确认 data-003 in_progress，其余 13 passing
-4. 检查 `openspec/changes/collection-state-machine/` 活动 change（proposal+design+specs+tasks 已就绪）
+2. 读 `claude-progress.md` 找 Session 020
+3. 读 `feature_list.json` 确认 14 功能 passing，无 in_progress
+4. 检查 `openspec/changes/collection-state-machine/` 活动 change（50/50 done，可 /opsx:archive 归档）
 5. `./start.sh` 启动验证基线
-6. 运行 `/opsx:apply` 实施 data-003（按 tasks.md 9 组步骤）
+6. 选「归档 data-003」或「下一步可选方向」之一开始

@@ -49,6 +49,9 @@ export default function StaffTab() {
       width: 100,
       render: (v: number) => `${(v * 100).toFixed(1)}%`,
     },
+    { title: '当天已接通', dataIndex: 'today_reached', width: 110 },
+    { title: '当天未接通', dataIndex: 'today_unreached', width: 110 },
+    { title: '当天待处理', dataIndex: 'today_pending', width: 110 },
   ]
 
   return (

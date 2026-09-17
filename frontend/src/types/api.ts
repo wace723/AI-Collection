@@ -121,13 +121,11 @@ export type TaskStatus =
   | 'DONE'
   | 'CANCELLED'
 
-/** 处理结果枚举 */
-export type TaskResultType =
-  | 'PAID'
-  | 'PROMISE'
-  | 'DISPUTE'
-  | 'LOST_CONTACT'
-  | 'OTHER'
+/** 处理结果枚举（data-003 两分类） */
+export type TaskResultType = 'UNREACHED' | 'REACHED'
+
+/** 订单催收状态（data-003 状态机） */
+export type CollectionState = 'NO_NEED' | 'PENDING_COLLECTION' | 'COLLECTED' | 'FINALIZED'
 
 /** 催收任务（列表/详情基础字段） */
 export interface Task {
@@ -149,6 +147,7 @@ export interface Task {
   result_note: string | null
   next_followup_date: string | null
   batch_id: string
+  collection_state: CollectionState
 }
 
 /** 任务分页列表 */
@@ -163,15 +162,15 @@ export interface TaskList {
 export interface TaskListParams {
   status?: TaskStatus
   assignee?: number
+  collection_state?: CollectionState
   page?: number
   size?: number
 }
 
-/** 回填结果入参 */
+/** 回填结果入参（data-003 两分类，移除 next_followup_date） */
 export interface TaskResultInput {
   result: TaskResultType
   note?: string
-  next_followup_date?: string
   talk_used?: string
 }
 
@@ -412,4 +411,7 @@ export interface StaffPerformance {
   done_count: number
   paid_count: number
   paid_rate: number
+  today_reached: number
+  today_unreached: number
+  today_pending: number
 }

@@ -9,13 +9,14 @@ from pydantic import BaseModel, ConfigDict
 
 
 class BatchRunOut(BaseModel):
-    """一次跑批（生成阶段）的结果摘要。"""
+    """一次跑批（状态机推进 + 生成阶段）的结果摘要。"""
 
     batch_id: str
     today: date
     scanned: int
     generated: int
     idempotent_skipped: int
+    finalized: int = 0  # 轮次耗尽进入终态的订单数（data-003）
     by_tier: dict[str, int]
 
 
@@ -64,14 +65,14 @@ class TaskOut(BaseModel):
     result_note: str | None = None
     next_followup_date: date | None = None
     batch_id: str
+    collection_state: str = "NO_NEED"  # Order 维度催收状态（data-003）
 
 
 class TaskResultIn(BaseModel):
-    """回填处理结果入参。"""
+    """回填处理结果入参（data-003 两分类，BREAKING）。"""
 
-    result: Literal["PAID", "PROMISE", "DISPUTE", "LOST_CONTACT", "OTHER"]
-    note: str | None = None
-    next_followup_date: date | None = None
+    result: Literal["UNREACHED", "REACHED"]
+    note: str | None = None  # 已接通时的自由文本反馈内容
     talk_used: str | None = None
 
 
@@ -101,6 +102,7 @@ class OrderBriefOut(BaseModel):
     risk_prob: float | None = None
     risk_tier: str | None = None
     risk_import_time: datetime | None = None
+    collection_state: str = "NO_NEED"  # 催收状态机（data-003）
 
 
 class FeatureBriefOut(BaseModel):

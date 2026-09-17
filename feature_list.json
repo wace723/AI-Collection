@@ -356,7 +356,7 @@
       "title": "催收状态机（Order.collection_state + 两分类回填）",
       "description": "Order 新增 collection_state 催收状态机（无需催收/待催收/已催收/终态），跑批按各轮 day_offset 推进状态并生成任务；回填结果收敛为「未接通/已接通」两分类，已接通推进该轮已催收；导入按中标日预设初始状态；已支付导入回写终态停催；监督员补催收状态过滤与完成进度。",
       "dependencies": ["data-002", "task-002", "risk-002"],
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "导入预设 collection_state：已到首轮时点→待催收，未到→无需催收，无配置→无需催收",
         "跑批按状态机推进：到达轮次时点+待支付→待催收+生成任务，轮次耗尽→终态，已支付跳过",
@@ -366,7 +366,18 @@
         "监督员按 collection_state 过滤+各催收员当天完成进度计数",
         "pytest 全量通过 + npm run build 通过 + 真实联调"
       ],
-      "evidence": [],
+      "evidence": [
+        "pytest -q 全量 → 186 passed（177 旧 + 9 新增测试场景，无回归；test_task_generation 23 + test_workbench 14 + test_e2e 3 + test_reassign 12 + test_supervisor 6 重写适配状态机+两分类）",
+        "npm run build → tsc + vite build 通过（前端 Workbench 回填表单改两分类+collection_state 展示，Supervisor StaffTab 加当天计数列）",
+        "alembic upgrade head → data-003 迁移成功（Order 新增 collection_state 字段默认 NO_NEED 非空 index；数据回填：现有 Order 按 win_bid_date+首轮 day_offset 回填状态、Task.result 旧值映射 PAID/DISPUTE/LOST_CONTACT/OTHER→REACHED/PROMISE→UNREACHED、Task.status PENDING→IN_PROGRESS）",
+        "真实联调（构造带风险概率 CSV + dev.db+真实uvicorn）：待支付导入 inserted=1 预设 collection_state=PENDING_COLLECTION risk_tier=HIGH；重置 NO_NEED→跑批推进 generated=1 collection_state=PENDING_COLLECTION；分配 assigned=1；回填 REACHED→Task DONE+Order COLLECTED；已支付导入 updated=1→collection_state=FINALIZED pay_status=PAID ✓",
+        "batch.py 重构状态机推进：扫描 NO_NEED/COLLECTED+待支付订单，按各轮 day_offset 推进 PENDING_COLLECTION+生成当轮 Task（每次只推进下一未催轮次），轮次耗尽→FINALIZED",
+        "state.py 回填两分类：REACHED→Task DONE+Order COLLECTED；UNREACHED→保持 IN_PROGRESS+PENDING_COLLECTION（同日可反复）；TaskPermissionError 越权 403 独立于 TaskStateError 409",
+        "parser.py：ingest_pending_rows 导入预设 collection_state（win_bid+首轮 day_offset<=today→PENDING_COLLECTION）；ingest_paid_rows 回写 pay_status=PAID 时同步 FINALIZED+未完成任务 CANCELLED 标注「已支付停催」",
+        "supervisor_service.py 扩展：当天已接通/未接通/待处理计数（today_reached/today_unreached/today_pending）",
+        "dashboard metrics.py 回款口径改为 REACHED（替代旧 PAID），processed_count 同口径",
+        "前端 types/api.ts：TaskResultType 改 UNREACHED/REACHED，加 CollectionState 类型，TaskResultInput 移除 next_followup_date；Workbench 回填表单改两分类+已接通反馈文本框；TaskDetailModal 展示催收状态；Supervisor StaffTab 加当天计数列"
+      ],
       "notes": "OpenSpec change: openspec/changes/collection-state-machine/（proposal+design+specs+tasks 已生成，4/4 artifacts complete）。BREAKING：Task.result 枚举从 {PAID/PROMISE/DISPUTE/LOST_CONTACT/OTHER} 改为 {UNREACHED, REACHED}；移除 PROMISE 改期分支；Task.status=PROMISE 改期的 PENDING 任务迁移为 IN_PROGRESS。影响 task-001（跑批重构为状态机推进）+ task-002（回填两分类）+ data-001/002（导入预设状态+已支付停催）。Capabilities：task-engine（新）+ data-ingestion（改）+ risk-engine（改）。实施用 /opsx:apply。"
     }
   ]

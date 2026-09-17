@@ -1,6 +1,7 @@
-"""手动改派任务测试（supervisor 增强需求，F-TASK-04）。
+"""手动改派任务测试（supervisor 增强需求 + data-003 改派不改 collection_state）。
 
-覆盖：改派 PENDING/IN_PROGRESS、终态不可改派、目标催收员校验、权限。
+覆盖：改派 IN_PROGRESS/PENDING_ASSIGN、终态不可改派、目标催收员校验、权限、
+改派保持 collection_state 不变。
 """
 
 from __future__ import annotations
@@ -14,6 +15,11 @@ from app.models.task import Task
 from app.models.user import User
 from app.services.risk_engine import seed_default_config
 from app.services.task_engine import assign_pending_tasks
+from app.services.task_engine.states import (
+    IN_PROGRESS,
+    PENDING_COLLECTION,
+    REACHED,
+)
 
 
 # ── 辅助 ──────────────────────────────────────────────────────────
@@ -40,13 +46,14 @@ def _make_order(db, order_no, *, risk_tier="HIGH") -> Order:
         win_bid_date=date(2026, 8, 15),
         risk_tier=risk_tier,
         pay_status=None,
+        collection_state=PENDING_COLLECTION,
     )
     db.add(order)
     db.flush()
     return order
 
 
-def _make_task(db, order, *, status="PENDING", assignee_id=None, risk_tier="HIGH") -> Task:
+def _make_task(db, order, *, status="IN_PROGRESS", assignee_id=None, risk_tier="HIGH") -> Task:
     task = Task(
         order_id=order.id,
         service_fee_order_no=order.service_fee_order_no,
@@ -106,7 +113,7 @@ def test_reassign_pending_task(client, db_session, seed_users, seed_risk_config)
     """SUPERVISOR 改派 PENDING 任务：assignee 变更，改派后状态为 IN_PROGRESS。"""
     cols = _collectors(db_session)
     o = _make_order(db_session, "RA01")
-    t = _make_task(db_session, o, status="PENDING", assignee_id=cols[0].id)
+    t = _make_task(db_session, o, status="IN_PROGRESS", assignee_id=cols[0].id)
     db_session.commit()
 
     resp = client.post(
@@ -145,7 +152,7 @@ def test_reassign_done_task_400(client, db_session, seed_users, seed_risk_config
     cols = _collectors(db_session)
     o = _make_order(db_session, "RA03")
     t = _make_task(db_session, o, status="DONE", assignee_id=cols[0].id)
-    t.result = "PAID"
+    t.result = REACHED
     db_session.commit()
 
     resp = client.post(
@@ -176,7 +183,7 @@ def test_reassign_to_nonexistent_user_400(client, db_session, seed_users, seed_r
     """改派给不存在的用户 → 400。"""
     cols = _collectors(db_session)
     o = _make_order(db_session, "RA05")
-    t = _make_task(db_session, o, status="PENDING", assignee_id=cols[0].id)
+    t = _make_task(db_session, o, status="IN_PROGRESS", assignee_id=cols[0].id)
     db_session.commit()
 
     resp = client.post(
@@ -190,7 +197,7 @@ def test_reassign_to_non_collector_400(client, db_session, seed_users, seed_risk
     """改派给非催收员角色（supervisor）→ 400。"""
     cols = _collectors(db_session)
     o = _make_order(db_session, "RA06")
-    t = _make_task(db_session, o, status="PENDING", assignee_id=cols[0].id)
+    t = _make_task(db_session, o, status="IN_PROGRESS", assignee_id=cols[0].id)
     db_session.commit()
     supervisor = db_session.query(User).filter(User.username == "supervisor").first()
 
@@ -205,7 +212,7 @@ def test_reassign_to_inactive_collector_400(client, db_session, seed_users, seed
     """改派给已停用的催收员 → 400。"""
     cols = _collectors(db_session)
     o = _make_order(db_session, "RA07")
-    t = _make_task(db_session, o, status="PENDING", assignee_id=cols[0].id)
+    t = _make_task(db_session, o, status="IN_PROGRESS", assignee_id=cols[0].id)
     # 停用 collector3
     cols[2].is_active = False
     db_session.commit()
@@ -233,7 +240,7 @@ def test_reassign_collector_forbidden(client, db_session, seed_users, seed_risk_
     """COLLECTOR 无权改派 → 403。"""
     cols = _collectors(db_session)
     o = _make_order(db_session, "RA08")
-    t = _make_task(db_session, o, status="PENDING", assignee_id=cols[0].id)
+    t = _make_task(db_session, o, status="IN_PROGRESS", assignee_id=cols[0].id)
     db_session.commit()
 
     resp = client.post(
@@ -247,7 +254,7 @@ def test_reassign_admin_ok(client, db_session, seed_users, seed_risk_config):
     """ADMIN 也可改派。"""
     cols = _collectors(db_session)
     o = _make_order(db_session, "RA09")
-    t = _make_task(db_session, o, status="PENDING", assignee_id=cols[0].id)
+    t = _make_task(db_session, o, status="IN_PROGRESS", assignee_id=cols[0].id)
     db_session.commit()
 
     resp = client.post(
@@ -261,10 +268,33 @@ def test_reassign_admin_ok(client, db_session, seed_users, seed_risk_config):
 def test_reassign_unauthenticated_401(client, db_session, seed_users, seed_risk_config):
     cols = _collectors(db_session)
     o = _make_order(db_session, "RA10")
-    t = _make_task(db_session, o, status="PENDING", assignee_id=cols[0].id)
+    t = _make_task(db_session, o, status="IN_PROGRESS", assignee_id=cols[0].id)
     db_session.commit()
 
     resp = client.post(
         f"/api/tasks/{t.id}/reassign?assignee_id={cols[1].id}"
     )
     assert resp.status_code == 401
+
+
+# ── data-003：改派保持 collection_state ──────────────────────────
+
+
+def test_reassign_keeps_collection_state(
+    client, db_session, seed_users, seed_risk_config
+):
+    """改派不改 Order.collection_state（催收状态由跑批/回填/已支付导入驱动）。"""
+    cols = _collectors(db_session)
+    o = _make_order(db_session, "RA11")
+    o.collection_state = PENDING_COLLECTION
+    t = _make_task(db_session, o, status="IN_PROGRESS", assignee_id=cols[0].id)
+    db_session.commit()
+
+    resp = client.post(
+        f"/api/tasks/{t.id}/reassign?assignee_id={cols[1].id}",
+        headers=_headers(client, "supervisor"),
+    )
+    assert resp.status_code == 200, resp.text
+    # 改派后 Order.collection_state 不变
+    db_session.refresh(o)
+    assert o.collection_state == PENDING_COLLECTION

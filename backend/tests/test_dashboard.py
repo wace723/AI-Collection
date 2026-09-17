@@ -95,7 +95,7 @@ def _make_task_result(
     task: Task,
     collector_id: int,
     *,
-    result="PAID",
+    result="REACHED",
     created_at=None,
 ) -> TaskResult:
     tr = TaskResult(
@@ -174,12 +174,12 @@ def test_daily_metrics_match_db(client, db_session, seed_users):
                      assignee_id=assignee, created_at=now)
     t_m = _make_task(db_session, o_m, risk_tier="MEDIUM", status="IN_PROGRESS",
                      assignee_id=assignee, created_at=now)
-    t_l = _make_task(db_session, o_l, risk_tier="LOW", status="PENDING",
+    t_l = _make_task(db_session, o_l, risk_tier="LOW", status="IN_PROGRESS",
                      assignee_id=assignee, created_at=now)
 
-    # 当日回款 1（PAID）+ 当日处理非回款 1（DISPUTE）
-    _make_task_result(db_session, t_h, assignee, result="PAID", created_at=now)
-    _make_task_result(db_session, t_m, assignee, result="DISPUTE", created_at=now)
+    # 当日 2 个 distinct task 各落一条 REACHED 明细（data-003：REACHED 即回款又算已处理）
+    _make_task_result(db_session, t_h, assignee, result="REACHED", created_at=now)
+    _make_task_result(db_session, t_m, assignee, result="REACHED", created_at=now)
     db_session.commit()
 
     resp = client.get("/api/dashboard/daily", headers=_headers(client, "supervisor"))
@@ -189,9 +189,10 @@ def test_daily_metrics_match_db(client, db_session, seed_users):
     assert d["date"] == today.isoformat()
     assert d["new_tasks"] == 3
     assert d["new_tasks_by_tier"] == {"HIGH": 1, "MEDIUM": 1, "LOW": 1, "NONE": 0}
-    assert d["paid_count"] == 1
-    assert d["processed_count"] == 2  # PAID + DISPUTE（distinct task）
-    assert d["paid_rate"] == 0.5  # 1/2
+    # data-003：paid/processed 都按 REACHED distinct task 计 → 两者相等
+    assert d["paid_count"] == 2
+    assert d["processed_count"] == 2  # 2 个 distinct task 落 REACHED
+    assert d["paid_rate"] == 1.0  # 2/2
 
 
 # ── TC-DASH-02：风险档分布统计 ─────────────────────────────────────
@@ -235,9 +236,9 @@ def test_weekly_trend_and_ranking(client, db_session, seed_users):
                     assignee_id=assignee)
     t2 = _make_task(db_session, o2, risk_tier="HIGH", status="DONE",
                     assignee_id=assignee)
-    _make_task_result(db_session, t1, assignee, result="PAID",
+    _make_task_result(db_session, t1, assignee, result="REACHED",
                       created_at=_utc_dt(today))
-    _make_task_result(db_session, t2, assignee, result="PAID",
+    _make_task_result(db_session, t2, assignee, result="REACHED",
                       created_at=_utc_dt(today - timedelta(days=1)))
     db_session.commit()
 
@@ -275,9 +276,9 @@ def test_weekly_ranking_sorted_desc(client, db_session, seed_users):
                     assignee_id=cols[0].id)
     t3 = _make_task(db_session, o3, risk_tier="HIGH", status="DONE",
                     assignee_id=cols[1].id)
-    _make_task_result(db_session, t1, cols[0].id, result="PAID", created_at=now)
-    _make_task_result(db_session, t2, cols[0].id, result="PAID", created_at=now)
-    _make_task_result(db_session, t3, cols[1].id, result="PAID", created_at=now)
+    _make_task_result(db_session, t1, cols[0].id, result="REACHED", created_at=now)
+    _make_task_result(db_session, t2, cols[0].id, result="REACHED", created_at=now)
+    _make_task_result(db_session, t3, cols[1].id, result="REACHED", created_at=now)
     db_session.commit()
 
     resp = client.get("/api/dashboard/weekly", headers=_headers(client, "supervisor"))
@@ -304,7 +305,7 @@ def test_daily_empty_db(client, db_session, seed_users):
 
 
 def test_paid_count_distinct_per_task(client, db_session, seed_users):
-    """同一任务当日多条 PAID 明细，paid_count 按 distinct task 计（=1），
+    """同一任务当日多条 REACHED 明细，paid_count 按 distinct task 计（=1），
     回款率不超 100%（分子分母口径一致）。覆盖 H-1 边界。"""
     today = _utc_today()
     now = _utc_dt(today)
@@ -314,9 +315,9 @@ def test_paid_count_distinct_per_task(client, db_session, seed_users):
     o = _make_order(db_session, "PD1", risk_tier="HIGH")
     t = _make_task(db_session, o, risk_tier="HIGH", status="DONE",
                    assignee_id=assignee, created_at=now)
-    # 同一任务两条 PAID 明细（模拟 PROMISE→PENDING→IN_PROGRESS→PAID 跨天再回款落同日）
-    _make_task_result(db_session, t, assignee, result="PAID", created_at=now)
-    _make_task_result(db_session, t, assignee, result="PAID", created_at=now)
+    # 同一任务两条 REACHED 明细（模拟 UNREACHED→IN_PROGRESS→REACHED 跨天再回款落同日）
+    _make_task_result(db_session, t, assignee, result="REACHED", created_at=now)
+    _make_task_result(db_session, t, assignee, result="REACHED", created_at=now)
     db_session.commit()
 
     resp = client.get("/api/dashboard/daily", headers=_headers(client, "supervisor"))
@@ -332,7 +333,7 @@ def test_new_tasks_by_tier_includes_none_key(client, db_session, seed_users):
     now = _utc_dt(today)
     cols = _collectors(db_session)
     o = _make_order(db_session, "NT1", risk_tier="HIGH")
-    _make_task(db_session, o, risk_tier="HIGH", status="PENDING",
+    _make_task(db_session, o, risk_tier="HIGH", status="IN_PROGRESS",
                assignee_id=cols[0].id, created_at=now)
     db_session.commit()
 
@@ -357,7 +358,7 @@ def test_monthly_smoke(client, db_session, seed_users):
     o1 = _make_order(db_session, "M01", risk_tier="HIGH")
     t1 = _make_task(db_session, o1, risk_tier="HIGH", status="DONE",
                     assignee_id=cols[0].id)
-    _make_task_result(db_session, t1, cols[0].id, result="PAID", created_at=now)
+    _make_task_result(db_session, t1, cols[0].id, result="REACHED", created_at=now)
     _make_order(db_session, "M02", risk_tier="MEDIUM", pay_status=None)
     db_session.commit()
 
@@ -385,7 +386,7 @@ def test_monthly_tier_effects_fixed_keys(client, db_session, seed_users):
     o = _make_order(db_session, "MF1", risk_tier="HIGH")
     t = _make_task(db_session, o, risk_tier="HIGH", status="DONE",
                    assignee_id=cols[0].id)
-    _make_task_result(db_session, t, cols[0].id, result="PAID", created_at=now)
+    _make_task_result(db_session, t, cols[0].id, result="REACHED", created_at=now)
     db_session.commit()
 
     resp = client.get("/api/dashboard/monthly", headers=_headers(client, "supervisor"))

@@ -18,6 +18,10 @@ class StaffPerformanceOut(BaseModel):
     done_count: int
     paid_count: int
     paid_rate: float
+    # data-003：当天完成进度（已接通/未接通/待处理）
+    today_reached: int = 0
+    today_unreached: int = 0
+    today_pending: int = 0
 
 
 __all__ = ["StaffPerformanceOut"]

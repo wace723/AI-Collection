@@ -38,6 +38,7 @@ from app.services.task_engine import (
     AssignmentError,
     BatchNotReadyError,
     TaskNotFoundError,
+    TaskPermissionError,
     TaskStateError,
     assign_pending_tasks,
     reassign_task,
@@ -61,7 +62,7 @@ _RISK_ORDER = case(
 
 
 def _task_to_out(task: Task, order: Order | None = None) -> TaskOut:
-    """Task ORM → TaskOut，补充 Order 关联字段（供应商/标的/概算/中标日）。"""
+    """Task ORM → TaskOut，补充 Order 关联字段（供应商/标的/概算/中标日/催收状态）。"""
     base = TaskOut.model_validate(task)
     if order is not None:
         base.supplier_name = order.supplier_name or ""
@@ -72,6 +73,7 @@ def _task_to_out(task: Task, order: Order | None = None) -> TaskOut:
             else None
         )
         base.win_bid_date = order.win_bid_date
+        base.collection_state = order.collection_state
     return base
 
 
@@ -79,6 +81,7 @@ def _task_to_out(task: Task, order: Order | None = None) -> TaskOut:
 def list_tasks(
     status_filter: str | None = Query(default=None, alias="status"),
     assignee: int | None = Query(default=None),
+    collection_state: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -88,6 +91,7 @@ def list_tasks(
 
     - COLLECTOR：强制只看分配给自己的任务（忽略 assignee 入参）
     - SUPERVISOR/ADMIN：可选 assignee 过滤，不传则看全部
+    - collection_state：按 Order 催收状态过滤（data-003）
     - 返回 supplier_name（join Order）
     """
     q = db.query(Task)
@@ -97,6 +101,11 @@ def list_tasks(
         q = q.filter(Task.assignee_id == assignee)
     if status_filter:
         q = q.filter(Task.status == status_filter)
+    if collection_state:
+        # 按 Order.collection_state 过滤（join Order）
+        q = q.join(Order, Task.order_id == Order.id).filter(
+            Order.collection_state == collection_state
+        )
 
     total = q.count()
     rows = (
@@ -171,6 +180,7 @@ def run_manual_batch(
             scanned=result.scanned,
             generated=result.generated,
             idempotent_skipped=result.idempotent_skipped,
+            finalized=result.finalized,
             by_tier=result.by_tier,
         )
     )
@@ -228,7 +238,10 @@ def submit_task_result(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("COLLECTOR", "SUPERVISOR", "ADMIN")),
 ) -> APIResponse[TaskOut]:
-    """回填处理结果：IN_PROGRESS → DONE(终态) 或 PENDING(PROMISE 改期)。"""
+    """回填处理结果：IN_PROGRESS → DONE(REACHED) 或保持 IN_PROGRESS(UNREACHED)。
+
+    data-003 两分类（BREAKING）：UNREACHED（未接通，仍待催收可同日反复）/ REACHED（已接通，该轮已催收）。
+    """
     try:
         task = submit_result(
             db,
@@ -236,11 +249,12 @@ def submit_task_result(
             current_user,
             result=payload.result,
             note=payload.note,
-            next_followup_date=payload.next_followup_date,
             talk_used=payload.talk_used,
         )
     except TaskNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except TaskPermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
     except TaskStateError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     return APIResponse(data=_task_to_out(task, db.get(Order, task.order_id)))
