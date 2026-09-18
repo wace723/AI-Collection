@@ -1,8 +1,11 @@
-## ADDED Requirements
+# task-engine Specification
 
+## Purpose
+TBD - created by archiving change collection-state-machine. Update Purpose after archive.
+## Requirements
 ### Requirement: Order 催收状态机
 
-系统在 Order 维护显式催收状态 `collection_state`，枚举四值：NO_NEED（无需催收，未到首轮时点）/ PENDING_COLLECTION（待催收，已到当轮时点尚未接通）/ COLLECTED（已催收，当轮已接通等下一轮）/ FINALIZED（终态，轮次耗尽或已支付停催）。催收状态对催收员与监督员直观可读，可索引、可过滤、可统计。
+系统 SHALL 在 Order 维护显式催收状态 `collection_state`，枚举四值：NO_NEED（无需催收，未到首轮时点）/ PENDING_COLLECTION（待催收，已到当轮时点尚未接通）/ COLLECTED（已催收，当轮已接通等下一轮）/ FINALIZED（终态，轮次耗尽或已支付停催）。催收状态对催收员与监督员直观可读，可索引、可过滤、可统计。
 
 #### Scenario: 导入预设初始催收状态
 - **WHEN** 待支付订单导入，订单 win_bid_date + 首轮 day_offset <= today 且 pay_status 非 PAID
@@ -22,7 +25,7 @@
 
 ### Requirement: 跑批按状态机推进催收状态
 
-每日跑批扫描 collection_state 为 NO_NEED 或 COLLECTED 且 pay_status 非 PAID 的订单，按各轮催收时点（win_bid_date + day_offset）推进状态并生成当轮任务。
+每日跑批 SHALL 扫描 collection_state 为 NO_NEED 或 COLLECTED 且 pay_status 非 PAID 的订单，按各轮催收时点（win_bid_date + day_offset）推进状态并生成当轮任务。
 
 #### Scenario: 到达首轮时点推进待催收
 - **WHEN** 跑批时订单 collection_state=NO_NEED，且 win_bid_date + 首轮 day_offset <= today，且 pay_status 非 PAID
@@ -50,7 +53,7 @@
 
 ### Requirement: 任务分配档内负载均衡且保留未完成任务 assignee
 
-系统将 PENDING_ASSIGN 任务按风险档 HIGH>MEDIUM>LOW + 账龄倒序排序，档内按当前最低负载轮询分配给活跃催收员。昨天未完成的 IN_PROGRESS 任务保留原 assignee，不回分配池。
+系统 SHALL 将 PENDING_ASSIGN 任务按风险档 HIGH>MEDIUM>LOW + 账龄倒序排序，档内按当前最低负载轮询分配给活跃催收员。昨天未完成的 IN_PROGRESS 任务 MUST 保留原 assignee，不回分配池。
 
 #### Scenario: 档内负载均衡分配
 - **WHEN** 跑批生成若干 PENDING_ASSIGN 任务，活跃催收员 N 名
@@ -66,7 +69,7 @@
 
 ### Requirement: 回填结果两分类推进催收状态
 
-催收员回填任务结果只分两类：UNREACHED（未接通）/ REACHED（已接通）。已接通可填自由文本反馈内容。
+催收员回填任务结果 SHALL 只分两类：UNREACHED（未接通）/ REACHED（已接通）。已接通 MUST 可填自由文本反馈内容。
 
 #### Scenario: 回填已接通推进已催收
 - **WHEN** 催收员对 IN_PROGRESS 任务回填 result=REACHED，附自由文本反馈 note
@@ -90,7 +93,7 @@
 
 ### Requirement: 已支付导入回写终态停催
 
-已支付订单导入回写 pay_status=PAID 时，同步推进 collection_state 为终态并停催未完成任务。
+已支付订单导入回写 pay_status=PAID 时，系统 SHALL 同步推进 collection_state 为终态并停催未完成任务。
 
 #### Scenario: 已支付导入推进终态
 - **WHEN** 已支付 CSV 导入匹配到待支付订单，回写 pay_status=PAID
@@ -102,7 +105,7 @@
 
 ### Requirement: 监督员催收状态过滤与完成进度
 
-监督员可按 collection_state 过滤任务列表，可查看各催收员当天完成进度（已接通/未接通/待处理计数）。
+监督员 SHALL 可按 collection_state 过滤任务列表，MUST 可查看各催收员当天完成进度（已接通/未接通/待处理计数）。
 
 #### Scenario: 按 collection_state 过滤任务
 - **WHEN** 监督员在任务列表按 collection_state=PENDING_COLLECTION 过滤
@@ -115,3 +118,4 @@
 #### Scenario: 改派保留催收状态
 - **WHEN** 监督员改派某 IN_PROGRESS 任务给另一催收员
 - **THEN** Task.assignee 变更，Task.status 保持 IN_PROGRESS，Order.collection_state 不变（改派不改催收状态）
+
