@@ -18,8 +18,9 @@ COLLECTION_STATES: tuple[str, ...] = (
     FINALIZED,
 )
 
-# 跑批需推进的活跃态（到达下一轮时点时推进）
-ADVANCEABLE_STATES: tuple[str, ...] = (NO_NEED, COLLECTED)
+# 跑批需推进的活跃态（到达下一轮时点时推进）：
+# NO_NEED/COLLECTED → 推进到 PENDING_COLLECTION；PENDING_COLLECTION → 若当轮无 Task 则生成
+ADVANCEABLE_STATES: tuple[str, ...] = (NO_NEED, PENDING_COLLECTION, COLLECTED)
 
 # Task.result 回填结果两分类（BREAKING：替代旧 PAID/PROMISE/DISPUTE/LOST_CONTACT/OTHER）
 UNREACHED = "UNREACHED"  # 未接通：该轮仍待催收，同日可反复重试

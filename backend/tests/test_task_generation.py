@@ -191,19 +191,29 @@ def test_paid_after_first_generation_skips(db_session, seed_risk_config):
 # ── 幂等 ──────────────────────────────────────────────────────────
 
 
-def test_repeat_batch_is_idempotent(db_session, seed_risk_config):
-    """同日再次跑批：订单已是 PENDING_COLLECTION（非 NO_NEED/COLLECTED），不重复推进。"""
+def test_repeat_batch_advances_next_round(db_session, seed_risk_config):
+    """同日再次跑批：PENDING_COLLECTION 订单推进到下一轮到期时点（生成 SECOND）。
+
+    data-004：PENDING_COLLECTION 在 ADVANCEABLE_STATES，跑批为其生成当轮无 Task 的下一时点任务。
+    win_bid=08-15，today=09-08：7 天(08-22) 和 15 天(08-30) 都到期。
+    首次跑批生成 FIRST（day_offset=7）；第二次跑批 FIRST 已有 Task → 生成 SECOND（day_offset=15）。
+    """
     _add_unpaid_high_order(db_session, "TC05_REPEAT", date(2026, 8, 15))
     db_session.commit()
 
     first = generate_tasks(db_session, today=date(2026, 9, 8))
-    assert first.generated == 1
+    assert first.generated == 1  # 首轮 FIRST
 
     second = generate_tasks(db_session, today=date(2026, 9, 8))
     assert second.batch_id == first.batch_id
-    assert second.scanned == 0  # PENDING_COLLECTION 不在 ADVANCEABLE_STATES
-    assert second.generated == 0
-    assert len(_tasks(db_session)) == 1
+    assert second.scanned == 1  # PENDING_COLLECTION 在 ADVANCEABLE_STATES
+    assert second.generated == 1  # 推进到 SECOND
+    assert len(_tasks(db_session)) == 2  # FIRST + SECOND
+
+    # 第三次跑批：FIRST+SECOND 都有 Task，30 天(THIRD) 时点=09-14 > today=09-08 未到 → 不生成
+    third = generate_tasks(db_session, today=date(2026, 9, 8))
+    assert third.generated == 0
+    assert len(_tasks(db_session)) == 2
 
 
 def test_db_unique_constraint_blocks_duplicate(db_session, seed_risk_config):
@@ -412,17 +422,19 @@ def test_batch_id_is_today_and_differs_across_days(db_session, seed_risk_config)
 
     r1 = generate_tasks(db_session, today=date(2026, 9, 8))
     assert r1.batch_id == "2026-09-08"
-    assert r1.generated == 1  # 仅 TC13_D1 首轮
+    assert r1.generated == 1  # 仅 TC13_D1 首轮（day_offset=7）
 
     r2 = generate_tasks(db_session, today=date(2026, 9, 9))
     assert r2.batch_id == "2026-09-09"
-    assert r2.generated == 1  # TC13_D2 首轮（09-09）
+    # TC13_D1 首轮已有 FIRST，today=09-09 时 15 天时点=08-30 已到 → 推进 SECOND
+    # TC13_D2 首轮（09-09）→ 共 2 个
+    assert r2.generated == 2
 
     by_batch: dict[str, list[str]] = {}
     for t in _tasks(db_session):
         by_batch.setdefault(t.batch_id, []).append(t.service_fee_order_no)
     assert by_batch["2026-09-08"] == ["TC13_D1"]
-    assert by_batch["2026-09-09"] == ["TC13_D2"]
+    assert sorted(by_batch["2026-09-09"]) == ["TC13_D1", "TC13_D2"]
 
 
 # ── 边界与编排 ─────────────────────────────────────────────────────
@@ -524,23 +536,23 @@ def test_manual_batch_run_and_status(client, db_session, seed_users, seed_risk_c
     assert data["generated"] == 1
     assert data["by_tier"] == {"HIGH": 1}
 
-    # 同日再次触发 → 幂等（订单已是 PENDING_COLLECTION）
+    # 同日再次触发 → 推进到下一轮（win=today-40，15 天时点已到 → 生成 SECOND）
     resp2 = client.post(
         "/api/tasks/batch/run?recalc=false", headers=_auth_headers(client)
     )
     data2 = resp2.json()["data"]
-    assert data2["generated"] == 0
+    assert data2["generated"] == 1  # 推进 SECOND
 
-    # 批次状态聚合
+    # 批次状态聚合（FIRST+SECOND 同 batch_id，都 PENDING_ASSIGN）
     st = client.get(
         f"/api/tasks/batch/status/{today.isoformat()}",
         headers=_auth_headers(client),
     )
     assert st.status_code == 200, st.text
     sdata = st.json()["data"]
-    assert sdata["total"] == 1
-    assert sdata["by_status"] == {"PENDING_ASSIGN": 1}
-    assert sdata["by_tier"] == {"HIGH": 1}
+    assert sdata["total"] == 2  # FIRST + SECOND
+    assert sdata["by_status"] == {"PENDING_ASSIGN": 2}
+    assert sdata["by_tier"] == {"HIGH": 2}
 
 
 def test_manual_batch_requires_admin(client, seed_users, seed_risk_config):

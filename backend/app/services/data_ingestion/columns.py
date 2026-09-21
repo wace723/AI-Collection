@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-# 待支付订单 CSV 表头（37 列 + 风险概率 = 38 列）
+# 待支付订单 CSV 表头（39 列基础 + 风险概率 = 40 列）
 PENDING_ORDER_COLUMNS: tuple[str, ...] = (
     "供应商编号",
     "供应商名称",
@@ -21,6 +21,8 @@ PENDING_ORDER_COLUMNS: tuple[str, ...] = (
     "中标品类",
     "合同类型",
     "标的概算金额",
+    "工程局单位",
+    "下属单位",
     "中标日期",
     "订单生成日期",
     "历史平台使用费订单数",
@@ -51,8 +53,8 @@ PENDING_ORDER_COLUMNS: tuple[str, ...] = (
     "风险概率",
 )
 
-# 已支付订单 CSV 表头（38 列 + 风险概率 = 39 列）
-# 与待支付差异：多「支付日期」「实际支付时长_天」（在订单生成日期后），无「订单生成日期」
+# 已支付订单 CSV 表头（39 列基础 + 工程局单位/下属单位 = 40 列，无风险概率）
+# 与待支付差异：多「支付日期」「实际支付时长_天」（在订单生成日期后），无「订单生成日期」「风险概率」
 PAID_ORDER_COLUMNS: tuple[str, ...] = (
     "供应商编号",
     "供应商名称",
@@ -64,6 +66,8 @@ PAID_ORDER_COLUMNS: tuple[str, ...] = (
     "中标品类",
     "合同类型",
     "标的概算金额",
+    "工程局单位",
+    "下属单位",
     "中标日期",
     "支付日期",
     "实际支付时长_天",
@@ -92,7 +96,6 @@ PAID_ORDER_COLUMNS: tuple[str, ...] = (
     "中标月份",
     "是否月末",
     "是否季末",
-    "风险概率",
 )
 
 # 必填列（缺失即报 400）
@@ -115,6 +118,8 @@ ORDER_FIELD_MAP: dict[str, str] = {
     "中标品类": "bid_category",
     "合同类型": "contract_type",
     "标的概算金额": "subject_estimate_amount",
+    "工程局单位": "engineering_bureau",
+    "下属单位": "subsidiary",
     "中标日期": "win_bid_date",
     "订单生成日期": "order_generated_date",
     "支付日期": "pay_time",

@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
@@ -13,6 +15,7 @@ from app.models.order import Order, OrderFeature
 from app.models.user import User
 from app.schemas.common import APIResponse
 from app.schemas.data import (
+    BatchResultOut,
     FeatureOut,
     OrderDetailOut,
     OrderListOut,
@@ -25,6 +28,7 @@ from app.services.data_ingestion.parser import (
     upload_paid_csv,
     upload_pending_csv,
 )
+from app.services.task_engine import BatchNotReadyError, run_batch
 
 router = APIRouter()
 
@@ -72,10 +76,31 @@ def upload_pending(
 
     入库未支付订单 + 特征 + 风险概率（经阈值映射档位）。
     重复订单更新风险概率 + 特征。
+    导入成功后自动触发跑批（推进状态机 + 生成任务），响应含 batch_result。
     """
     raw = _validate_csv(file)
     result = _parse_or_400(lambda: upload_pending_csv(db, raw))
-    return APIResponse(data=UploadSummary(**result.__dict__))
+    # 导入后自动跑批（推进状态机 + 生成任务）；跑批失败不阻断导入（已入库）
+    batch_result = None
+    try:
+        batch = run_batch(db, today=date.today(), recalc_risk=False)
+        batch_result = BatchResultOut(
+            generated=batch.generated,
+            finalized=batch.finalized,
+            by_tier=batch.by_tier,
+        )
+    except BatchNotReadyError:
+        # 无生效风险档配置时跑批跳过（导入数据已入库，跑批待配置就绪后定时/启动触发）
+        pass
+    return APIResponse(
+        data=UploadSummary(
+            inserted=result.inserted,
+            skipped=result.skipped,
+            updated=result.updated,
+            errors=result.errors,
+            batch_result=batch_result,
+        )
+    )
 
 
 @router.post("/upload-paid", response_model=APIResponse[UploadSummary])

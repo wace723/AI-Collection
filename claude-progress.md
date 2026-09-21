@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`（或 `./start.sh` 快速启动不跑测试）
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`
-- 当前最高优先级未完成功能：**无**（MVP + supervisor 增强 + 业务流程简化 + data-002 导入驱动风险 + data-003 催收状态机 全完成）
-- 当前 blocker：无（data-003 已完成，186 passed + 真实联调通过，待归档）
+- 当前最高优先级未完成功能：**无**（MVP + supervisor 增强 + 业务流程简化 + data-002/003 + data-004 CSV 列适配+自动跑批+导入结果 Modal 全完成）
+- 当前 blocker：无（data-004 已完成，186 passed + 真实联调通过，待归档）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -532,3 +532,29 @@
   - 轮次耗尽 FINALIZED 后不再自动催，需业务方人工跟进
   - grill-me 技能在本环境调不通（依赖外部 OpenAI agent 运行时），本次用 AskUserQuestion 4 轮澄清替代
 - 下一步最佳动作：data-003 已完整收尾。可 /opsx:archive 归档；后续可选：真实算法替换、PG 迁移、非功能测试、真实业务 CSV 灌入验证
+
+### Session 021
+
+- 日期：2026-09-21
+- 本轮目标：实施 data-004（CSV 列适配 + 自动跑批 + 导入结果 Modal），用 /opsx:apply 走 OpenSpec tasks
+- 工具：Claude Code + OpenSpec /opsx:apply + 2 个并行 Agent（test_data_upload/test_e2e 重写）+ harness 状态同步
+- 已完成（6 组 task 全勾选）：
+  - 第1组 模型与迁移：Order 新增 engineering_bureau/subsidiary（String(255) nullable）；Alembic 迁移 9c26d1e4f8b0
+  - 第2组 CSV 列映射 40 列：columns.py PENDING_ORDER_COLUMNS（40列含工程局单位/下属单位/风险概率）+ PAID_ORDER_COLUMNS（40列含工程局单位/下属单位，无风险概率——真实已支付 CSV 无风险概率列）；ORDER_FIELD_MAP 加映射
+  - 第3组 待支付导入自动跑批：api/data.py upload_pending 导入后自动 run_batch(today=date.today())，响应 UploadSummary.batch_result（generated/finalized/by_tier）；upload_paid 不跑批 batch_result=None
+  - 第4组 启动跑批：main.py lifespan _run_startup_batch()，scheduler.start() 后跑批，try/except 不阻断启动
+  - 第5组 前端导入结果 Modal：types/api.ts Order 加 engineering_bureau/subsidiary + UploadSummary 加 BatchResultOut；Config 页两个 Dragger 上传后弹 Modal 展示明细+跑批统计
+  - 第6组 测试与验证：test_data_upload(11)/test_e2e(3)/test_task_generation(23) 重写适配 40 列+自动跑批+PENDING_COLLECTION 进 ADVANCEABLE_STATES
+- 实施中发现的设计修正（D6）：
+  - ADVANCEABLE_STATES 加 PENDING_COLLECTION：修复 data-003 遗留缺陷（导入预设 PENDING_COLLECTION 的订单卡在「待催收但无 Task」），跑批对 PENDING_COLLECTION 订单当轮无 Task 时生成当轮 Task
+  - 已支付 CSV 去掉「风险概率」列：真实已支付 CSV 40 列无风险概率，后端 PAID_ORDER_COLUMNS 同步修正（原 41 列→40 列）
+- 运行过的验证：
+  - pytest -q 全量 → **186 passed**（无回归）
+  - npm run build → tsc + vite build 通过
+  - alembic upgrade head → data-004 迁移成功
+  - 真实联调（测试数据/真实 CSV + dev.db+真实uvicorn）：待支付导入 inserted=10→自动跑批 generated=3 by_tier={HIGH:3}→任务 total=3 PENDING_ASSIGN；已支付导入 40 列解析正常 ✓
+  - OpenSpec 4 artifacts done, 6 组 task 全勾选
+- 已知风险或未解决问题：
+  - 已支付 CSV 与待支付 CSV 订单号不重叠（测试数据特征），已支付导入无匹配全 skipped（非 bug，测试数据问题）
+  - 真实待支付 CSV 含风险概率列，已支付 CSV 无风险概率列（业务方提供的数据格式）
+- 下一步最佳动作：data-004 已完整收尾。可 /opsx:archive 归档；后续可选：真实算法替换、PG 迁移、非功能测试

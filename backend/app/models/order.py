@@ -52,6 +52,9 @@ class Order(Base, TimestampMixin):
     order_generated_date: Mapped[date | None] = mapped_column(Date)
     register_area: Mapped[str | None] = mapped_column(String(64))
     register_province: Mapped[str | None] = mapped_column(String(64))
+    # 新 CSV 字段（data-004）：工程局单位/下属单位（订单级项目归属）
+    engineering_bureau: Mapped[str | None] = mapped_column(String(255))
+    subsidiary: Mapped[str | None] = mapped_column(String(255))
     # 支付状态（已支付导入回写）
     pay_status: Mapped[str | None] = mapped_column(String(16))
     pay_time: Mapped[datetime | None] = mapped_column(DateTime)

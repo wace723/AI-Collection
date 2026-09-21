@@ -10,6 +10,14 @@ from pydantic import BaseModel
 from app.schemas.common import APIResponse, Pagination
 
 
+class BatchResultOut(BaseModel):
+    """跑批结果摘要（待支付导入后自动跑批返回）。"""
+
+    generated: int
+    finalized: int
+    by_tier: dict[str, int]
+
+
 class UploadSummary(BaseModel):
     """上传结果统计。"""
 
@@ -17,6 +25,7 @@ class UploadSummary(BaseModel):
     skipped: int
     updated: int = 0  # 重复订单更新支付状态数
     errors: list[str] = []
+    batch_result: BatchResultOut | None = None  # 待支付导入后自动跑批结果；已支付导入为 None
 
 
 class OrderOut(BaseModel):
@@ -33,6 +42,8 @@ class OrderOut(BaseModel):
     bid_category: str | None = None
     contract_type: str | None = None
     subject_estimate_amount: float | None = None
+    engineering_bureau: str | None = None
+    subsidiary: str | None = None
     win_bid_date: date | None = None
     order_generated_date: date | None = None
     register_area: str | None = None
@@ -43,6 +54,7 @@ class OrderOut(BaseModel):
     risk_prob: float | None = None
     risk_tier: str | None = None
     risk_import_time: datetime | None = None
+    collection_state: str = "NO_NEED"
 
 
 class FeatureOut(BaseModel):

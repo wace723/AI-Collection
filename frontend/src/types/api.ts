@@ -30,12 +30,20 @@ export interface LoginData {
   user: User
 }
 
+/** 跑批结果摘要（待支付导入后自动跑批返回） */
+export interface BatchResultOut {
+  generated: number
+  finalized: number
+  by_tier: Record<string, number>
+}
+
 /** CSV 上传结果统计 */
 export interface UploadSummary {
   inserted: number
   skipped: number
   updated: number
   errors: string[]
+  batch_result?: BatchResultOut | null
 }
 
 /** 订单列表项 */
@@ -51,6 +59,8 @@ export interface Order {
   bid_category: string | null
   contract_type: string | null
   subject_estimate_amount: number | null
+  engineering_bureau: string | null
+  subsidiary: string | null
   win_bid_date: string | null
   order_generated_date: string | null
   register_area: string | null
@@ -187,6 +197,8 @@ export interface OrderBrief {
   bid_category: string | null
   contract_type: string | null
   subject_estimate_amount: number | null
+  engineering_bureau: string | null
+  subsidiary: string | null
   win_bid_date: string | null
   order_generated_date: string | null
   register_area: string | null

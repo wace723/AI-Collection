@@ -387,7 +387,7 @@
       "title": "CSV 列适配 + 自动跑批 + 导入结果 Modal",
       "description": "CSV 新增工程局单位/下属单位两列（待支付/已支付均 40 列）适配 Order 模型；待支付导入成功后自动触发跑批推进状态机生成任务；系统启动时自动跑批同步任务状态；前端导入后弹 Modal 展示导入明细与跑批结果。",
       "dependencies": ["data-003"],
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "CSV 40 列适配：待支付/已支付 CSV 含工程局单位/下属单位，导入入库到 Order",
         "待支付导入后自动跑批：导入成功即推进状态机生成任务，响应含 batch_result",
@@ -396,7 +396,17 @@
         "前端导入结果 Modal：展示 inserted/updated/skipped/errors + 跑批统计",
         "pytest 全量通过 + npm run build 通过 + 真实联调"
       ],
-      "evidence": [],
+      "evidence": [
+        "pytest -q 全量 → 186 passed（无回归；test_data_upload 11 + test_e2e 3 + test_task_generation 23 重写适配 40 列+自动跑批+PENDING_COLLECTION 进 ADVANCEABLE_STATES）",
+        "npm run build → tsc + vite build 通过（前端 Config 页导入结果 Modal 展示 inserted/updated/skipped/errors + batch_result 跑批统计）",
+        "alembic upgrade head → data-004 迁移成功（Order 新增 engineering_bureau/subsidiary 字段 nullable）",
+        "真实联调（测试数据/真实 CSV + dev.db+真实uvicorn）：待支付导入 inserted=10→自动跑批 generated=3 by_tier={HIGH:3}→任务 total=3 PENDING_ASSIGN；已支付导入 40 列无风险概率 40 列解析正常 ✓",
+        "columns.py 两套表头 40 列：PENDING_ORDER_COLUMNS（40列含工程局单位/下属单位/风险概率）+ PAID_ORDER_COLUMNS（40列含工程局单位/下属单位，无风险概率）；ORDER_FIELD_MAP 加 engineering_bureau/subsidiary 映射",
+        "api/data.py upload_pending 导入后自动 run_batch(today=date.today())，响应 UploadSummary.batch_result（generated/finalized/by_tier）；upload_paid 不跑批 batch_result=None",
+        "main.py lifespan _run_startup_batch()：scheduler.start() 后跑批，try/except 不阻断启动",
+        "states.py ADVANCEABLE_STATES 加 PENDING_COLLECTION（修复 data-003 遗留缺陷：导入预设 PENDING_COLLECTION 的订单跑批生成当轮 Task）",
+        "前端 types/api.ts Order 加 engineering_bureau/subsidiary；UploadSummary 加 batch_result（BatchResultOut）；Config 页两个 Dragger 上传后弹 Modal 展示明细+跑批统计"
+      ],
       "notes": "OpenSpec change: openspec/changes/auto-batch-and-csv-columns/（proposal+design+specs+tasks 已生成，4/4 artifacts complete）。BREAKING：旧 38/39 列 CSV 不兼容（表头缺工程局单位/下属单位会 400）。Capabilities：data-ingestion（改）+ task-engine（改）+ import-payment-sync（改）。实施用 /opsx:apply。测试数据：测试数据/平台使用费待支付订单特征查询_2026_09_21.csv（40列）、测试数据/平台使用费已支付订单特征查询_2026_09_21.csv（40列，utf-8）。"
     }
   ]

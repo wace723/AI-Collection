@@ -53,6 +53,13 @@ Config 页两个 Dragger 上传后，弹 Modal 展示：
 
 用 antd Modal + Statistic/List 组件，非阻断（用户可查看后关闭）。
 
+### D6: PENDING_COLLECTION 纳入跑批推进范围（实施中发现的设计修正）
+实施真实联调时发现 data-003 遗留缺陷：导入预设 PENDING_COLLECTION 的订单（已到首轮时点），跑批只推进 NO_NEED/COLLECTED，不推进 PENDING_COLLECTION，导致这些订单卡在「待催收但无 Task」状态。
+
+修正：ADVANCEABLE_STATES 加 PENDING_COLLECTION。跑批对 PENDING_COLLECTION 订单：若当轮无 Task 则生成当轮 Task（状态不变，已是 PENDING_COLLECTION）；若所有轮次都有 Task 且仍待支付 → FINALIZED。幂等保证（当轮有 Task 不重复生成）。
+
+这是对 data-003 状态机语义的修正，使「待催收 = 应有当轮 Task」语义自洽。
+
 ## Risks / Trade-offs
 
 - **[BREAKING CSV 列数] → 旧 38/39 列 CSV 不兼容**：表头缺「工程局单位」「下属单位」会 400。缓解：业务方用新 40 列 CSV（测试数据已是 40 列）。

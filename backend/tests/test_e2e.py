@@ -1,15 +1,17 @@
-"""e2e-001 端到端完整闭环验证（data-003 催收状态机重写）。
+"""e2e-001 端到端完整闭环验证（data-004 改造适配）。
 
 覆盖 docs/03 §8 TC-E2E-01/02/03：
-- TC-E2E-01 完整催收闭环（上传待支付→跑批推进→分配→工作台→详情→推荐话术→AI生成→
+- TC-E2E-01 完整催收闭环（上传待支付→自动跑批推进→分配→工作台→详情→推荐话术→AI生成→
   回填REACHED→Order转COLLECTED→大盘）
 - TC-E2E-02 高风险多轮催收（首轮REACHED→COLLECTED→第15天跑批推进PENDING_COLLECTION→生成SECOND）
-- TC-E2E-03 已支付订单全程不催收
+- TC-E2E-03 已支付订单标记 PAID 后跑批不生成新任务
 
-data-003 改造点：
-- Order 维护 collection_state 状态机，跑批按状态推进
-- 回填两分类（UNREACHED/REACHED），REACHED 推进 Order→COLLECTED
-- 跑批每次只推进到下一个未催轮次（非一次生成所有到期时点）
+data-004 改造点（影响 e2e）：
+- POST /api/data/upload-pending 导入成功后自动调用 run_batch(today=date.today(), recalc_risk=False)，
+  响应 UploadSummary.batch_result（含 generated/finalized/by_tier）。不再需要手动 POST /batch/run。
+- CSV 由 38 列变 40 列：新增「工程局单位」「下属单位」（在「标的概算金额」后、「中标日期」前）。
+- PENDING_COLLECTION 现在在 ADVANCEABLE_STATES，跑批会推进 PENDING_COLLECTION 状态的订单
+  （为其生成当轮无 Task 的任务）。
 
 通过 TestClient 串真实 API 端到端验证全流程贯通。AI 话术走 mock（不触网）。
 """
@@ -32,10 +34,12 @@ from app.services.task_engine.states import (
     REACHED,
 )
 
-# 待支付订单 CSV 表头（38 列，与 columns.py 一致）
+# 待支付订单 CSV 表头（40 列，与 columns.py 一致）
+# data-004：新增「工程局单位」「下属单位」（在「标的概算金额」后、「中标日期」前）
 CSV_HEADER = (
     "供应商编号,供应商名称,招标编号,服务费订单号,标的名称,招标类型,采购类型,"
-    "中标品类,合同类型,标的概算金额,中标日期,订单生成日期,历史平台使用费订单数,"
+    "中标品类,合同类型,标的概算金额,工程局单位,下属单位,中标日期,订单生成日期,"
+    "历史平台使用费订单数,"
     "上次缴费历时_天,历史缴费平均历时_天,服务市场历史支付金额,历史报名次数,"
     "历史投标次数,历史中标次数,历史中标率,近90天投标活跃度,首次中标距本次间隔_天,"
     "中标时是否会员,中标前购买会员次数,注册资金,注册地区,注册省份,"
@@ -61,10 +65,14 @@ def _headers(client, username) -> dict[str, str]:
 
 
 def _make_row(order_no: str, supplier: str, win_bid_date: date) -> str:
-    """构造一行待支付 CSV 数据（38 列，风险概率=75 → HIGH 档）。"""
+    """构造一行待支付 CSV 数据（40 列，风险概率=75 → HIGH 档）。
+
+    data-004：在「标的概算金额」后插入「工程局单位,下属单位」两列。
+    """
     return (
         f"1355714,{supplier},biz001,{order_no},某标的项目,"
         f"竞价采购,集中采购,工程类,合同类型1,1000000,"
+        f"某工程局,某下属单位,"
         f"{win_bid_date.year}/{win_bid_date.month}/{win_bid_date.day},"
         f"{win_bid_date.year}/{win_bid_date.month}/{win_bid_date.day},"
         f"0,30,30,"
@@ -141,15 +149,21 @@ def seed_users(db_session):
 
 
 def test_e2e_01_full_collection_loop(client, db_session, seed_users):
-    """上传待支付→跑批推进→分配→工作台→详情→推荐话术→AI生成→回填REACHED→COLLECTED→大盘。
+    """上传待支付→自动跑批推进→分配→工作台→详情→推荐话术→AI生成→回填REACHED→COLLECTED→大盘。
 
     构造 20 条 HIGH 风险订单（风险概率=75），win_bid_date=today-8天
-    （HIGH 档 7 天时点已到，跑批推进 NO_NEED→PENDING_COLLECTION，生成 FIRST 任务）。
+    （HIGH 档 7 天时点已到，导入即预设 PENDING_COLLECTION，并触发自动跑批生成 FIRST 任务）。
+
+    data-004 改造点：
+    - POST /api/data/upload-pending 导入后自动调用 run_batch(today=date.today())，
+      响应 UploadSummary.batch_result（含 generated/finalized/by_tier）。
+    - 不再需要手动 POST /api/tasks/batch/run 推进首轮。
     """
     today = date.today()
     win_bid = today - timedelta(days=8)
 
     # 步骤1：管理员上传待支付 CSV，20 条入库（风险概率=75 → HIGH，导入预设 collection_state）
+    # data-004：导入成功后自动触发跑批（推进状态机 + 生成任务）
     rows = [_make_row(f"SFO_E2E_{i:04d}", f"测试公司{i}", win_bid) for i in range(20)]
     csv_text = _build_csv(rows)
     files = {"file": ("orders.csv", csv_text.encode("utf-8"), "text/csv")}
@@ -157,7 +171,16 @@ def test_e2e_01_full_collection_loop(client, db_session, seed_users):
         "/api/data/upload-pending", files=files, headers=_headers(client, "admin")
     )
     assert resp.status_code == 200, resp.text
-    assert resp.json()["data"]["inserted"] == 20
+    upload_data = resp.json()["data"]
+    assert upload_data["inserted"] == 20
+
+    # 自动跑批已触发：batch_result 不为 None（证明 upload-pending 已自动跑批）
+    assert upload_data["batch_result"] is not None
+    batch_result = upload_data["batch_result"]
+    # HIGH 档首轮 day_offset=7，win_bid=today-8 → 首轮时点已到，生成 20 条 FIRST 任务
+    # （不强制断言 generated 具体值，因 today 真实日期与 win_bid 关系决定；
+    #  这里 win_bid=today-8 确保首轮 7 天时点已到，generated 应为 20）
+    assert batch_result["generated"] == 20
 
     # 导入预设：win_bid+7天<=today → PENDING_COLLECTION
     order0 = (
@@ -168,29 +191,8 @@ def test_e2e_01_full_collection_loop(client, db_session, seed_users):
     assert order0.collection_state == PENDING_COLLECTION
 
     # 步骤2：风险档已由导入写入
-
     # 步骤3：默认风险档配置已 seed 生效（fixture）
-
-    # 步骤4：管理员手动触发跑批（recalc=false）
-    resp = client.post(
-        "/api/tasks/batch/run?recalc=false", headers=_headers(client, "admin")
-    )
-    assert resp.status_code == 200, resp.text
-    batch = resp.json()["data"]
-    # PENDING_COLLECTION 订单不在 ADVANCEABLE_STATES(NO_NEED/COLLECTED)，
-    # 跑批不推进（已待催收），生成 0 —— 因导入已预设为 PENDING_COLLECTION
-    # 但需生成任务：改用 NO_NEED 起点验证跑批推进
-    # （此处导入已预设 PENDING_COLLECTION，跑批不生成任务，需手动重置为 NO_NEED 跑批推进）
-    # 为验证完整闭环，重置为 NO_NEED 再跑批
-    db_session.query(Order).filter(Order.collection_state == PENDING_COLLECTION).update(
-        {Order.collection_state: "NO_NEED"}, synchronize_session=False
-    )
-    db_session.commit()
-    resp = client.post(
-        "/api/tasks/batch/run?recalc=false", headers=_headers(client, "admin")
-    )
-    batch = resp.json()["data"]
-    assert batch["generated"] == 20  # NO_NEED 推进到 PENDING_COLLECTION + 生成 FIRST
+    # 步骤4：已由 upload-pending 自动跑批生成首轮任务，无需手动 POST /batch/run
 
     # 步骤4b：管理员触发分配
     resp = client.post(
@@ -274,6 +276,12 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
     """首轮 REACHED→COLLECTED→第15天跑批推进 PENDING_COLLECTION→生成 SECOND→回填 REACHED。
 
     用 service 层 run_batch 注入 today 模拟时间推进（API 不接受 today 注入）。
+
+    data-004 改造点：
+    - upload-pending 导入后自动跑批（today=date.today()）。base_date=2026-01-01，
+      today=真实今天（远晚于 base_date+30），自动跑批会生成首轮 FIRST(day_offset=7) 任务。
+    - 为用注入 today 的 run_batch 验证多轮时间推进，导入后清理自动跑批产生的任务，
+      重置 collection_state=NO_NEED，得到干净起点。
     """
     from app.services.task_engine import assign_pending_tasks, submit_result
     from app.models.user import User as UserModel
@@ -287,6 +295,8 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
         "/api/data/upload-pending", files=files, headers=_headers(client, "admin")
     )
     assert resp.json()["data"]["inserted"] == 1
+    # data-004：导入后自动跑批已触发，batch_result 不为 None
+    assert resp.json()["data"]["batch_result"] is not None
 
     order = (
         db_session.query(Order)
@@ -294,8 +304,11 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
         .first()
     )
     assert order.risk_tier == "HIGH"
-    # 导入预设：base_date+7 <= today? today=2026-01-01 时 7 天未到 → NO_NEED
-    # 重置为 NO_NEED 确保起点
+
+    # 清理导入时自动跑批产生的任务 + 重置状态为 NO_NEED，得到干净的多轮推进起点
+    db_session.query(Task).filter(Task.order_id == order.id).delete(
+        synchronize_session=False
+    )
     order.collection_state = "NO_NEED"
     db_session.commit()
 
@@ -355,7 +368,15 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
 
 
 def test_e2e_03_paid_order_never_collected(client, db_session, seed_users):
-    """上传含已支付订单 → 跑批不推进不生成 → 多日跑批始终不生成。"""
+    """已支付订单标记 PAID 后跑批不生成新任务。
+
+    data-004 改造点：
+    - upload-pending 导入后自动跑批：win_bid=today-90，HIGH 首轮 day_offset=7 已到，
+      导入时自动生成 FIRST 任务（导入时订单仍待支付，属正常催收）。
+    - 标记 PAID 后再跑批（API + service 层多日推进）：已支付订单被 pay_status 门控跳过，
+      不推进、不生成新任务。本测试断言「标记 PAID 后的跑批不生成新任务」
+      （而非「全程不生成任何任务」，因导入时已自动跑批生成过）。
+    """
     today = date.today()
     win_bid = today - timedelta(days=90)
 
@@ -366,6 +387,8 @@ def test_e2e_03_paid_order_never_collected(client, db_session, seed_users):
         "/api/data/upload-pending", files=files, headers=_headers(client, "admin")
     )
     assert resp.json()["data"]["inserted"] == 1
+    # data-004：导入后自动跑批已触发
+    assert resp.json()["data"]["batch_result"] is not None
 
     order = (
         db_session.query(Order)
@@ -374,11 +397,17 @@ def test_e2e_03_paid_order_never_collected(client, db_session, seed_users):
     )
     assert order.risk_tier == "HIGH"
 
-    # 手动标记为已支付
+    # 导入时自动跑批生成首轮任务（订单当时待支付，win_bid+7<=today）
+    tasks_before_paid = (
+        db_session.query(Task).filter(Task.order_id == order.id).all()
+    )
+    assert len(tasks_before_paid) == 1  # 导入自动跑批生成的 FIRST
+
+    # 手动标记为已支付（不取消已存在任务，仅阻止后续跑批生成新任务）
     order.pay_status = "PAID"
     db_session.commit()
 
-    # 跑批（recalc=false）：已支付订单跳过，不推进不生成
+    # 标记 PAID 后跑批（recalc=false）：已支付订单被 pay_status 门控跳过，不推进不生成新任务
     resp = client.post(
         "/api/tasks/batch/run?recalc=false", headers=_headers(client, "admin")
     )
@@ -386,11 +415,11 @@ def test_e2e_03_paid_order_never_collected(client, db_session, seed_users):
     batch = resp.json()["data"]
     assert batch["generated"] == 0
 
-    # 多日跑批仍不生成
+    # 多日跑批仍不生成新任务（任务数仍等于导入时的数量）
     for offset in (1, 7, 15, 30):
         run_batch(db_session, today=today + timedelta(days=offset), recalc_risk=False)
         db_session.commit()
-    tasks = (
+    tasks_after_paid = (
         db_session.query(Task).filter(Task.order_id == order.id).all()
     )
-    assert len(tasks) == 0
+    assert len(tasks_after_paid) == len(tasks_before_paid)
