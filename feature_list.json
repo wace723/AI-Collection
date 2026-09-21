@@ -1,6 +1,6 @@
 {
   "project": "平台使用费 AI 辅助催收系统",
-  "last_updated": "2026-09-17",
+  "last_updated": "2026-09-21",
   "rules": {
     "single_active_feature": true,
     "passing_requires_evidence": true,
@@ -379,6 +379,25 @@
         "前端 types/api.ts：TaskResultType 改 UNREACHED/REACHED，加 CollectionState 类型，TaskResultInput 移除 next_followup_date；Workbench 回填表单改两分类+已接通反馈文本框；TaskDetailModal 展示催收状态；Supervisor StaffTab 加当天计数列"
       ],
       "notes": "OpenSpec change: openspec/changes/collection-state-machine/（proposal+design+specs+tasks 已生成，4/4 artifacts complete）。BREAKING：Task.result 枚举从 {PAID/PROMISE/DISPUTE/LOST_CONTACT/OTHER} 改为 {UNREACHED, REACHED}；移除 PROMISE 改期分支；Task.status=PROMISE 改期的 PENDING 任务迁移为 IN_PROGRESS。影响 task-001（跑批重构为状态机推进）+ task-002（回填两分类）+ data-001/002（导入预设状态+已支付停催）。Capabilities：task-engine（新）+ data-ingestion（改）+ risk-engine（改）。实施用 /opsx:apply。"
+    },
+    {
+      "id": "data-004",
+      "priority": 15,
+      "area": "data_ingestion",
+      "title": "CSV 列适配 + 自动跑批 + 导入结果 Modal",
+      "description": "CSV 新增工程局单位/下属单位两列（待支付/已支付均 40 列）适配 Order 模型；待支付导入成功后自动触发跑批推进状态机生成任务；系统启动时自动跑批同步任务状态；前端导入后弹 Modal 展示导入明细与跑批结果。",
+      "dependencies": ["data-003"],
+      "status": "in_progress",
+      "verification": [
+        "CSV 40 列适配：待支付/已支付 CSV 含工程局单位/下属单位，导入入库到 Order",
+        "待支付导入后自动跑批：导入成功即推进状态机生成任务，响应含 batch_result",
+        "系统启动自动跑批：lifespan 启动调度器后跑批，同步停机期间到期时点",
+        "已支付导入不跑批：只回写支付状态+终态停催",
+        "前端导入结果 Modal：展示 inserted/updated/skipped/errors + 跑批统计",
+        "pytest 全量通过 + npm run build 通过 + 真实联调"
+      ],
+      "evidence": [],
+      "notes": "OpenSpec change: openspec/changes/auto-batch-and-csv-columns/（proposal+design+specs+tasks 已生成，4/4 artifacts complete）。BREAKING：旧 38/39 列 CSV 不兼容（表头缺工程局单位/下属单位会 400）。Capabilities：data-ingestion（改）+ task-engine（改）+ import-payment-sync（改）。实施用 /opsx:apply。测试数据：测试数据/平台使用费待支付订单特征查询_2026_09_21.csv（40列）、测试数据/平台使用费已支付订单特征查询_2026_09_21.csv（40列，utf-8）。"
     }
   ]
 }

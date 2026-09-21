@@ -1,0 +1,25 @@
+## MODIFIED Requirements
+
+### Requirement: 已支付订单导入与支付状态回写
+
+系统 SHALL 提供独立的已支付订单导入入口，按服务费订单号匹配数据库中现有的待支付订单，回写支付状态。MUST 不自动新建订单。回写 pay_status=PAID 时 MUST 同步推进 Order.collection_state 为终态 FINALIZED，停催该订单所有未完成催收任务。已支付 CSV SHALL 为 40 列（含支付日期+实际支付时长+风险概率+工程局单位+下属单位），列映射 MUST 含工程局单位→Order.engineering_bureau、下属单位→Order.subsidiary。已支付导入 SHALL 不触发跑批（不生成新任务）。
+
+#### Scenario: 匹配到待支付订单则回写支付状态与终态
+- **WHEN** 管理员上传已支付订单 CSV（40 列），某行 service_fee_order_no 在数据库存在且 pay_status 非 PAID
+- **THEN** 该订单 pay_status 置为 PAID，pay_time 置为 CSV 的「支付日期」，actual_pay_duration_days 置为 CSV 的「实际支付时长_天」，collection_state 置为 FINALIZED，该订单所有非终态 Task → CANCELLED（result_note 标注「已支付停催」），计入 updated
+
+#### Scenario: 无匹配订单则跳过
+- **WHEN** 已支付 CSV 某行 service_fee_order_no 在数据库不存在
+- **THEN** 该行跳过，计入 skipped，不新建订单
+
+#### Scenario: 已支付订单再次导入跳过
+- **WHEN** 已支付 CSV 某行匹配到的订单已是 PAID
+- **THEN** 该行跳过，计入 skipped
+
+#### Scenario: 已支付导入不触发跑批
+- **WHEN** 已支付 CSV 导入完成
+- **THEN** 不触发跑批（已支付导入只回写支付状态+终态停催，不生成新任务），响应不含 batch_result
+
+#### Scenario: 已支付导入需 ADMIN 权限
+- **WHEN** 非 ADMIN 角色调用已支付导入
+- **THEN** 返回 403
