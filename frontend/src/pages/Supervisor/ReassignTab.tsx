@@ -11,7 +11,7 @@ import {
 } from 'antd'
 import { ReloadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import { listTasks, reassignTask } from '../../api/tasks'
+import { listTasks, reassignTask, runAssign } from '../../api/tasks'
 import { listUsers } from '../../api/users'
 import type { Task, UserAccount } from '../../types/api'
 
@@ -35,6 +35,7 @@ export default function ReassignTab() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [collectors, setCollectors] = useState<UserAccount[]>([])
   const [loading, setLoading] = useState(true)
+  const [assigning, setAssigning] = useState(false)
   // taskId → 选中的目标催收员 id
   const [selected, setSelected] = useState<Record<number, number>>({})
 
@@ -75,6 +76,25 @@ export default function ReassignTab() {
       await load()
     } catch {
       /* ignore */
+    }
+  }
+
+  const onAutoAssign = async () => {
+    setAssigning(true)
+    try {
+      const result = await runAssign()
+      if (result.assigned > 0) {
+        message.success(`自动分配完成：${result.assigned} 个任务已分配`)
+      } else if (result.skipped > 0) {
+        message.warning(`无可分配任务（跳过 ${result.skipped} 个，无活跃催收员）`)
+      } else {
+        message.info('无待分配任务')
+      }
+      await load()
+    } catch {
+      /* ignore */
+    } finally {
+      setAssigning(false)
     }
   }
 
@@ -139,6 +159,9 @@ export default function ReassignTab() {
       title="任务改派"
       extra={
         <Space>
+          <Button type="primary" loading={assigning} onClick={onAutoAssign}>
+            自动分配
+          </Button>
           <Button icon={<ReloadOutlined />} onClick={load}>
             刷新
           </Button>
