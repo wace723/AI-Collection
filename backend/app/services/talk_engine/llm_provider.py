@@ -7,8 +7,10 @@ get_llm_provider 按 ai_config 动态构造（DB 优先，.env 兜底）。
 
 from __future__ import annotations
 
+import json
 import logging
 from abc import ABC, abstractmethod
+from typing import Any
 
 from openai import OpenAI
 
@@ -43,6 +45,22 @@ class MockLLMProvider(LLMProvider):
         )
 
 
+def _parse_extra_body() -> dict[str, Any]:
+    """解析 settings.LLM_EXTRA_BODY（JSON 字符串→dict），失败返回空 dict。
+
+    用于透传非标准参数给 OpenAI 兼容服务（如 glm 的 thinking 关闭）。
+    """
+    raw = settings.LLM_EXTRA_BODY
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("LLM_EXTRA_BODY 解析失败（忽略）: %s", raw)
+        return {}
+
+
 class OpenAICompatibleProvider(LLMProvider):
     """OpenAI 兼容协议实现。
 
@@ -62,6 +80,7 @@ class OpenAICompatibleProvider(LLMProvider):
         self.api_key = api_key
         self.base_url = base_url  # 原样传入 SDK，不 rstrip/不拼路径
         self.model = model
+        self._extra_body = _parse_extra_body()
         # SDK 自行处理鉴权与 URL 拼接
         self._client = OpenAI(
             api_key=api_key,
@@ -78,6 +97,7 @@ class OpenAICompatibleProvider(LLMProvider):
             ],
             temperature=0.7,
             max_tokens=512,
+            extra_body=self._extra_body or None,
         )
         content = resp.choices[0].message.content
         if not content or not content.strip():

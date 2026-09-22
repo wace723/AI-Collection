@@ -234,7 +234,7 @@ function AiTalkCard({ taskId }: { taskId: number }) {
           <Paragraph style={{ marginBottom: 0 }}>{aiTalk.content || '（无内容）'}</Paragraph>
         </>
       ) : (
-        <Text type="secondary">点击「生成」获取 AI 话术（LLM 调用约 30-40s，请耐心等待）</Text>
+        <Text type="secondary">点击「生成」获取 AI 话术</Text>
       )}
     </Card>
   )
