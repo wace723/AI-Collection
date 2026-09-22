@@ -35,6 +35,7 @@ export default function Config() {
       message.success('导入完成，已自动跑批生成任务')
     } catch (err) {
       onError?.(err as Error)
+      message.error('导入失败（请检查 CSV 格式或网络/超时）')
     } finally {
       setPendingLoading(false)
     }
@@ -50,6 +51,7 @@ export default function Config() {
       message.success('已支付回写完成')
     } catch (err) {
       onError?.(err as Error)
+      message.error('导入失败（请检查 CSV 格式或网络/超时）')
     } finally {
       setPaidLoading(false)
     }
