@@ -408,6 +408,27 @@
         "前端 types/api.ts Order 加 engineering_bureau/subsidiary；UploadSummary 加 batch_result（BatchResultOut）；Config 页两个 Dragger 上传后弹 Modal 展示明细+跑批统计"
       ],
       "notes": "OpenSpec change: openspec/changes/auto-batch-and-csv-columns/（proposal+design+specs+tasks 已生成，4/4 artifacts complete）。BREAKING：旧 38/39 列 CSV 不兼容（表头缺工程局单位/下属单位会 400）。Capabilities：data-ingestion（改）+ task-engine（改）+ import-payment-sync（改）。实施用 /opsx:apply。测试数据：测试数据/平台使用费待支付订单特征查询_2026_09_21.csv（40列）、测试数据/平台使用费已支付订单特征查询_2026_09_21.csv（40列，utf-8）。"
+    },
+    {
+      "id": "task-003",
+      "priority": 16,
+      "area": "task_engine",
+      "title": "单活跃任务区间模型（一个订单同时一个任务，跨区间删旧生新）",
+      "description": "任务模型从多轮并存重构为单活跃任务区间模型：一个订单同一时间只有一个活跃任务（当前催收区间的），跨区间时删除旧任务、生成新区间任务（不管旧任务 DONE/IN_PROGRESS）。按各档配置的 day_offset 升序划区间，通用适配所有风险档多轮。已支付导入删除活跃任务（替代 CANCELLED）。",
+      "dependencies": ["data-004"],
+      "status": "in_progress",
+      "verification": [
+        "单活跃任务：一个订单同时只有一个活跃 Task（当前区间的）",
+        "区间划分：按各档 day_offset 升序划区间，每个区间一个任务",
+        "跨区间删旧生新：进入新区间删除旧活跃任务，生成新区间任务",
+        "已接通跨区间仍生成：上一轮 DONE 不影响这轮生成",
+        "通用多轮适配：所有风险档按各自配置划区间（HIGH/MEDIUM/LOW 都可能多轮）",
+        "多次跑批幂等：同区间不重复生成",
+        "已支付导入删除活跃任务：FINALIZED + 删活跃任务（替代 CANCELLED）",
+        "pytest 全量通过 + npm run build 通过 + 真实联调"
+      ],
+      "evidence": [],
+      "notes": "OpenSpec change: openspec/changes/single-active-task-interval-model/（proposal+design+specs+tasks 已生成，4/4 artifacts complete）。BREAKING：任务模型从多轮并存改为单活跃任务（一个订单同时一个任务），现有 tasks 表需清空重建。根因：data-004 实施后发现 HIGH 档多轮并存（7/15/30 三个任务）+ 多次跑批触发导致大量 PENDING_ASSIGN 堆积，且催收员看到「只有 HIGH 任务」错觉。Capabilities：task-engine（改）+ import-payment-sync（改）。实施用 /opsx:apply。"
     }
   ]
 }
