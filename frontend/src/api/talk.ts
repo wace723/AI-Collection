@@ -13,12 +13,15 @@ export async function getRecommendTalks(taskId: number): Promise<TalkRecommend> 
   return res.data.data as TalkRecommend
 }
 
-/** AI 生成话术（POST /api/talk/generate?task_id=，失败降级模板） */
+/** AI 生成话术（POST /api/talk/generate?task_id=，失败降级模板）
+ *
+ * LLM 真实调用约 40s（glm-5.2），单独设 120s 超时（默认 10s 会误超时报错）。
+ */
 export async function generateTalk(taskId: number): Promise<GenerateTalk> {
   const res = await client.post<APIResponse<GenerateTalk>>(
     '/talk/generate',
     null,
-    { params: { task_id: taskId } },
+    { params: { task_id: taskId }, timeout: 120000 },
   )
   return res.data.data as GenerateTalk
 }
