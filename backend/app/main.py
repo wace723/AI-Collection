@@ -17,23 +17,30 @@ logger = logging.getLogger(__name__)
 
 
 def _run_startup_batch() -> None:
-    """系统启动时自动跑批（data-004）：同步停机期间到期的催收时点。
+    """系统启动时自动跑批 + 分配（data-004）。
 
-    跑批失败不阻断启动（记录日志）；跑批幂等，重复触发不产生重复任务。
+    同步停机期间到期的催收时点：先跑批（推进状态机 + 生成任务），
+    再分配（把 PENDING_ASSIGN 任务分给活跃催收员）。
+    失败不阻断启动（记录日志）；跑批/分配幂等，重复触发不产生重复任务。
     """
     try:
-        from app.services.task_engine import BatchNotReadyError, run_batch
+        from app.services.task_engine import (
+            BatchNotReadyError,
+            assign_pending_tasks,
+            run_batch,
+        )
 
         db = SessionLocal()
         try:
             run_batch(db, today=date.today(), recalc_risk=False)
+            assign_pending_tasks(db)
         finally:
             db.close()
     except BatchNotReadyError:
         # 无生效风险档配置时跳过（待配置就绪后定时/导入触发）
         pass
     except Exception:
-        logger.exception("启动跑批失败（不阻断启动）")
+        logger.exception("启动跑批/分配失败（不阻断启动）")
 
 
 @asynccontextmanager
