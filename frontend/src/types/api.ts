@@ -174,6 +174,7 @@ export interface TaskListParams {
   status?: TaskStatus
   assignee?: number
   collection_state?: CollectionState
+  risk_tier?: RiskTier
   page?: number
   size?: number
 }

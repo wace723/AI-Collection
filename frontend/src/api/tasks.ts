@@ -21,6 +21,8 @@ export async function listTasks(params: TaskListParams = {}): Promise<TaskList> 
     params: {
       status: params.status,
       assignee: params.assignee,
+      collection_state: params.collection_state,
+      risk_tier: params.risk_tier,
       page: params.page ?? 1,
       size: params.size ?? 20,
     },

@@ -13,7 +13,7 @@ import { ReloadOutlined } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
 import { listTasks, reassignTask, runAssign } from '../../api/tasks'
 import { listUsers } from '../../api/users'
-import type { Task, UserAccount } from '../../types/api'
+import type { Task, UserAccount, RiskTier } from '../../types/api'
 
 const statusLabel: Record<string, string> = {
   PENDING_ASSIGN: '待分配',
@@ -38,12 +38,13 @@ export default function ReassignTab() {
   const [assigning, setAssigning] = useState(false)
   // taskId → 选中的目标催收员 id
   const [selected, setSelected] = useState<Record<number, number>>({})
+  const [riskTier, setRiskTier] = useState<string | undefined>(undefined)
 
-  const load = async () => {
+  const load = async (tier?: string) => {
     setLoading(true)
     try {
       const [taskData, users] = await Promise.all([
-        listTasks({ page: 1, size: 100 }),
+        listTasks({ page: 1, size: 500, risk_tier: tier as RiskTier | undefined }),
         listUsers(),
       ])
       setTasks(taskData.items)
@@ -159,10 +160,25 @@ export default function ReassignTab() {
       title="任务改派"
       extra={
         <Space>
+          <Select
+            allowClear
+            placeholder="风险档"
+            style={{ width: 120 }}
+            value={riskTier}
+            onChange={(v: string | undefined) => {
+              setRiskTier(v)
+              void load(v)
+            }}
+            options={[
+              { label: '高风险', value: 'HIGH' },
+              { label: '中风险', value: 'MEDIUM' },
+              { label: '低风险', value: 'LOW' },
+            ]}
+          />
           <Button type="primary" loading={assigning} onClick={onAutoAssign}>
             自动分配
           </Button>
-          <Button icon={<ReloadOutlined />} onClick={load}>
+          <Button icon={<ReloadOutlined />} onClick={() => load(riskTier)}>
             刷新
           </Button>
         </Space>

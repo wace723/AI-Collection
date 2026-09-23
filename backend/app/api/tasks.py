@@ -82,8 +82,9 @@ def list_tasks(
     status_filter: str | None = Query(default=None, alias="status"),
     assignee: int | None = Query(default=None),
     collection_state: str | None = Query(default=None),
+    risk_tier: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    size: int = Query(default=20, ge=1, le=100),
+    size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> APIResponse[PagedResponse[TaskOut]]:
@@ -92,6 +93,7 @@ def list_tasks(
     - COLLECTOR：强制只看分配给自己的任务（忽略 assignee 入参）
     - SUPERVISOR/ADMIN：可选 assignee 过滤，不传则看全部
     - collection_state：按 Order 催收状态过滤（data-003）
+    - risk_tier：按风险档过滤（HIGH/MEDIUM/LOW，task-003）
     - 返回 supplier_name（join Order）
     """
     q = db.query(Task)
@@ -101,6 +103,8 @@ def list_tasks(
         q = q.filter(Task.assignee_id == assignee)
     if status_filter:
         q = q.filter(Task.status == status_filter)
+    if risk_tier:
+        q = q.filter(Task.risk_tier == risk_tier)
     if collection_state:
         # 按 Order.collection_state 过滤（join Order）
         q = q.join(Order, Task.order_id == Order.id).filter(
