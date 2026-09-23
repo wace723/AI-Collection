@@ -9,14 +9,14 @@ from pydantic import BaseModel, ConfigDict
 
 
 class BatchRunOut(BaseModel):
-    """一次跑批（状态机推进 + 生成阶段）的结果摘要。"""
+    """一次跑批（单活跃任务区间模型）的结果摘要。"""
 
     batch_id: str
     today: date
     scanned: int
-    generated: int
-    idempotent_skipped: int
-    finalized: int = 0  # 轮次耗尽进入终态的订单数（data-003）
+    generated: int  # 新建任务数
+    deleted: int = 0  # 跨区间删除的旧活跃任务数（task-003）
+    skipped: int = 0  # 同区间幂等跳过数（task-003）
     by_tier: dict[str, int]
 
 

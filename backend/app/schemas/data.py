@@ -14,7 +14,8 @@ class BatchResultOut(BaseModel):
     """跑批结果摘要（待支付导入后自动跑批返回）。"""
 
     generated: int
-    finalized: int
+    deleted: int = 0
+    skipped: int = 0
     by_tier: dict[str, int]
 
 

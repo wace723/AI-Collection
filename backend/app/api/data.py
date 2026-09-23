@@ -86,7 +86,8 @@ def upload_pending(
         batch = run_batch(db, today=date.today(), recalc_risk=False)
         batch_result = BatchResultOut(
             generated=batch.generated,
-            finalized=batch.finalized,
+            deleted=batch.deleted,
+            skipped=batch.skipped,
             by_tier=batch.by_tier,
         )
     except BatchNotReadyError:

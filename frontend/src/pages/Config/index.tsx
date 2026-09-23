@@ -161,8 +161,8 @@ export default function Config() {
                   </Col>
                   <Col span={8}>
                     <Statistic
-                      title="轮次耗尽终态"
-                      value={pendingResult.batch_result.finalized}
+                      title="跨区间删旧任务"
+                      value={pendingResult.batch_result.deleted}
                     />
                   </Col>
                   <Col span={8}>

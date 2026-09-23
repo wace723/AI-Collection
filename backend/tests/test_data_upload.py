@@ -135,9 +135,11 @@ def test_upload_utf8_csv_success(client, seed_users, db_session):
 
     # data-004：待支付导入后自动跑批，响应含 batch_result（字段存在即可，
     # generated 具体值依赖 date.today() 真实日期，不强制断言）
+    # task-003：batch_result 字段为 generated/deleted/skipped/by_tier
     assert body["data"]["batch_result"] is not None
     assert "generated" in body["data"]["batch_result"]
-    assert "finalized" in body["data"]["batch_result"]
+    assert "deleted" in body["data"]["batch_result"]
+    assert "skipped" in body["data"]["batch_result"]
     assert "by_tier" in body["data"]["batch_result"]
 
     # 列表可查到 20 条

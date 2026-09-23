@@ -179,8 +179,8 @@ def run_manual_batch(
             today=result.today,
             scanned=result.scanned,
             generated=result.generated,
-            idempotent_skipped=result.idempotent_skipped,
-            finalized=result.finalized,
+            deleted=result.deleted,
+            skipped=result.skipped,
             by_tier=result.by_tier,
         )
     )

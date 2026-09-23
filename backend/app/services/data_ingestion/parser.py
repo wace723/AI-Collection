@@ -363,19 +363,19 @@ def ingest_paid_rows(db: Session, rows: list[dict[str, str]]) -> UploadResult:
             existing.pay_time = pay_time
         if actual_duration is not None:
             existing.actual_pay_duration_days = actual_duration
-        # data-003：已支付 → 催收状态终态停催，未完成任务 CANCELLED
+        # task-003：已支付 → 催收状态终态停催，删除该订单所有活跃任务
+        # （PENDING_ASSIGN/IN_PROGRESS/DONE 全部删除，替代原 CANCELLED 标注）
         existing.collection_state = FINALIZED
-        open_tasks = (
+        active_tasks = (
             db.query(Task)
             .filter(
                 Task.order_id == existing.id,
-                Task.status.in_(("PENDING_ASSIGN", "IN_PROGRESS")),
+                Task.status.in_(("PENDING_ASSIGN", "IN_PROGRESS", "DONE")),
             )
             .all()
         )
-        for t in open_tasks:
-            t.status = "CANCELLED"
-            t.result_note = "已支付停催"
+        for t in active_tasks:
+            db.delete(t)
         updated += 1
 
     db.commit()

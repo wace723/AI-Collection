@@ -33,7 +33,8 @@ export interface LoginData {
 /** 跑批结果摘要（待支付导入后自动跑批返回） */
 export interface BatchResultOut {
   generated: number
-  finalized: number
+  deleted: number
+  skipped: number
   by_tier: Record<string, number>
 }
 

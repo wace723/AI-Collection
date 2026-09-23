@@ -416,7 +416,7 @@
       "title": "单活跃任务区间模型（一个订单同时一个任务，跨区间删旧生新）",
       "description": "任务模型从多轮并存重构为单活跃任务区间模型：一个订单同一时间只有一个活跃任务（当前催收区间的），跨区间时删除旧任务、生成新区间任务（不管旧任务 DONE/IN_PROGRESS）。按各档配置的 day_offset 升序划区间，通用适配所有风险档多轮。已支付导入删除活跃任务（替代 CANCELLED）。",
       "dependencies": ["data-004"],
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "单活跃任务：一个订单同时只有一个活跃 Task（当前区间的）",
         "区间划分：按各档 day_offset 升序划区间，每个区间一个任务",
@@ -427,7 +427,15 @@
         "已支付导入删除活跃任务：FINALIZED + 删活跃任务（替代 CANCELLED）",
         "pytest 全量通过 + npm run build 通过 + 真实联调"
       ],
-      "evidence": [],
+      "evidence": [
+        "pytest -q 全量 → 198 passed（186→198，无回归；test_task_generation 35 + test_e2e 3 + test_data_upload 11 重写适配单活跃任务区间模型）",
+        "npm run build → tsc + vite build 通过（前端 BatchResultOut 字段 finalized→deleted/skipped，Config Modal 展示跨区间删旧任务数）",
+        "真实联调（测试数据/待支付订单.csv 8348 行 + dev.db）：导入 inserted=8348→跑批 generated=8348 deleted=0 skipped=0 by_tier={HIGH:2514,MEDIUM:3325,LOW:2509}→有多活跃任务的订单数=0（单活跃任务验证）→跨区间删旧生新（age16→15天任务，跨区间age8→7天任务，活跃任务数始终=1）",
+        "batch.py 重写 generate_tasks：扫描所有待支付订单，按各档 day_offset 升序算 current_offset（最大 day_offset 使 win_bid+day_offset<=today），查现有活跃任务，同区间幂等/跨区间删旧生新",
+        "parser.py ingest_paid_rows 回写 pay_status=PAID 时删除该订单所有活跃任务（PENDING_ASSIGN/IN_PROGRESS/DONE 全部删除，替代 CANCELLED）",
+        "BatchResult 字段变化：generated/deleted/skipped/by_tier（替代旧 idempotent_skipped/finalized），api/tasks.py+api/data.py+scheduler/jobs.py+schemas 同步更新",
+        "前端 types/api.ts BatchResultOut 改 deleted/skipped；Config Modal 展示「跨区间删旧任务」替代「轮次耗尽终态」"
+      ],
       "notes": "OpenSpec change: openspec/changes/single-active-task-interval-model/（proposal+design+specs+tasks 已生成，4/4 artifacts complete）。BREAKING：任务模型从多轮并存改为单活跃任务（一个订单同时一个任务），现有 tasks 表需清空重建。根因：data-004 实施后发现 HIGH 档多轮并存（7/15/30 三个任务）+ 多次跑批触发导致大量 PENDING_ASSIGN 堆积，且催收员看到「只有 HIGH 任务」错觉。Capabilities：task-engine（改）+ import-payment-sync（改）。实施用 /opsx:apply。"
     }
   ]
