@@ -39,15 +39,31 @@ export default function ReassignTab() {
   // taskId → 选中的目标催收员 id
   const [selected, setSelected] = useState<Record<number, number>>({})
   const [riskTier, setRiskTier] = useState<string | undefined>(undefined)
+  const [assigneeFilter, setAssigneeFilter] = useState<number | undefined>(undefined)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const PAGE_SIZE = 20
 
-  const load = async (tier?: string) => {
+  const load = async (
+    opts: { tier?: string; assignee?: number; page?: number } = {}
+  ) => {
+    const tier = opts.tier ?? riskTier
+    const assignee = opts.assignee ?? assigneeFilter
+    const p = opts.page ?? page
     setLoading(true)
     try {
       const [taskData, users] = await Promise.all([
-        listTasks({ page: 1, size: 500, risk_tier: tier as RiskTier | undefined }),
+        listTasks({
+          page: p,
+          size: PAGE_SIZE,
+          risk_tier: tier as RiskTier | undefined,
+          assignee,
+        }),
         listUsers(),
       ])
       setTasks(taskData.items)
+      setTotal(taskData.total)
+      setPage(p)
       setCollectors(users.filter((u) => u.role === 'COLLECTOR' && u.is_active))
     } catch {
       /* ignore */
@@ -57,7 +73,7 @@ export default function ReassignTab() {
   }
 
   useEffect(() => {
-    void load()
+    void load({ page: 1 })
   }, [])
 
   const onReassign = async (task: Task) => {
@@ -91,7 +107,7 @@ export default function ReassignTab() {
       } else {
         message.info('无待分配任务')
       }
-      await load()
+      await load({ page: 1 })
     } catch {
       /* ignore */
     } finally {
@@ -167,7 +183,7 @@ export default function ReassignTab() {
             value={riskTier}
             onChange={(v: string | undefined) => {
               setRiskTier(v)
-              void load(v)
+              void load({ tier: v, page: 1 })
             }}
             options={[
               { label: '高风险', value: 'HIGH' },
@@ -175,10 +191,24 @@ export default function ReassignTab() {
               { label: '低风险', value: 'LOW' },
             ]}
           />
+          <Select
+            allowClear
+            placeholder="当前负责人"
+            style={{ width: 140 }}
+            value={assigneeFilter}
+            onChange={(v: number | undefined) => {
+              setAssigneeFilter(v)
+              void load({ assignee: v, page: 1 })
+            }}
+            options={collectors.map((c) => ({
+              label: c.display_name,
+              value: c.id,
+            }))}
+          />
           <Button type="primary" loading={assigning} onClick={onAutoAssign}>
             自动分配
           </Button>
-          <Button icon={<ReloadOutlined />} onClick={() => load(riskTier)}>
+          <Button icon={<ReloadOutlined />} onClick={() => load({ page: 1 })}>
             刷新
           </Button>
         </Space>
@@ -190,7 +220,13 @@ export default function ReassignTab() {
         loading={loading}
         columns={columns}
         dataSource={tasks}
-        pagination={{ pageSize: 20, showSizeChanger: false }}
+        pagination={{
+          current: page,
+          pageSize: PAGE_SIZE,
+          total,
+          showSizeChanger: false,
+          onChange: (p) => void load({ page: p }),
+        }}
       />
     </Card>
   )
