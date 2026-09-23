@@ -6,30 +6,39 @@
 
 ## 当前已验证
 
-- **全部完成**：MVP 12 功能 + supervisor 增强 + 业务流程简化 + data-002/003 + **data-004 CSV 列适配+自动跑批+导入结果 Modal**（已验证，待归档）
-- 最近验证（Session 021）：
-  - 后端 pytest 全量 **186 passed**（无回归）
+- **全部完成**：MVP 12 功能 + supervisor 增强 + 业务流程简化 + data-002/003/004 + **task-003 单活跃任务区间模型**（已验证并归档）
+- 最近验证（Session 023）：
+  - 后端 pytest 全量 **198 passed**（无回归）
   - 前端 `npm run build` 通过
-  - 真实联调：待支付导入(40列)→自动跑批生成任务+batch_result→已支付导入(40列) ✓
-  - OpenSpec auto-batch-and-csv-columns 6 组 task 全勾选，待归档
+  - 真实联调：导入 8348 订单 → 跑批 generated=8348 每订单一个活跃任务（有多活跃任务订单数=0）→ 跨区间删旧生新验证 ✓
+  - OpenSpec single-active-task-interval-model 25/25 tasks done，已归档
 
-## 本轮改动总结（data-004 CSV 列适配+自动跑批+导入结果 Modal）
+## 本轮改动总结（task-003 单活跃任务区间模型）
 
-- Order 新增 `engineering_bureau`（工程局单位）、`subsidiary`（下属单位）字段 + Alembic 迁移
-- CSV 列映射 40 列：待支付（含工程局单位/下属单位/风险概率）、已支付（含工程局单位/下属单位，无风险概率）
-- 待支付导入后自动跑批：`upload_pending` 导入成功后调用 `run_batch(today=date.today())`，响应含 batch_result
-- 系统启动自动跑批：`main.py` lifespan 启动调度器后跑批，同步停机期间到期时点
-- 前端导入结果 Modal：Config 页导入后弹 Modal 展示 inserted/updated/skipped/errors + 跑批统计
-- 设计修正（D6）：ADVANCEABLE_STATES 加 PENDING_COLLECTION（修复 data-003 遗留缺陷：导入预设 PENDING_COLLECTION 的订单跑批生成当轮 Task）
-- 迁移 9c26d1e4f8b0：Order 加 engineering_bureau/subsidiary
+- **单活跃任务模型**：一个订单同一时间只有一个活跃任务（当前区间的），替代原多轮并存
+- **区间算法**：current_offset = 最大 day_offset 使 win_bid+day_offset<=today，按各档配置 day_offset 升序划区间
+- **跨区间删旧生新**：进入新区间删除旧活跃任务（不管 DONE/IN_PROGRESS），生成新区间任务
+- **已接通跨区间仍生成**：每轮独立催收，上一轮 DONE 不影响这轮
+- **通用多轮适配**：所有风险档按各自配置 day_offset 划区间（HIGH/MEDIUM/LOW 都可能多轮）
+- **已支付导入删除活跃任务**：FINALIZED + 删活跃任务（替代 CANCELLED）
+- **BatchResult 字段**：generated/deleted/skipped/by_tier（替代 idempotent_skipped/finalized）
+
+## 之前几轮的小改（Session 022，已合并）
+
+- AI 话术超时修复：generateTalk 30s + 关闭 thinking（39s→2-8s）
+- Supervisor ReassignTab 加「自动分配」按钮
+- 系统启动时自动跑批后追加自动分配
+- 大文件导入结果 Modal 不弹修复：uploadPendingCsv/uploadPaidCsv 设 120s 超时
 
 ## 仍损坏或未验证
 
 - 已知缺陷：无
-- 未验证路径：无（data-004 已完整收尾，待 /opsx:archive 归档）
+- 未验证路径：无（task-003 已完整收尾并归档）
 - 风险/遗留：
-  - 已支付 CSV 与待支付 CSV 订单号不重叠（测试数据特征），已支付导入无匹配全 skipped（非 bug）
-  - 真实待支付 CSV 含风险概率列，已支付 CSV 无风险概率列（业务方数据格式）
+  - task-003 BREAKING：现有 tasks 表需清空重建（dev.db 已清空，生产部署需清空）
+  - 旧任务直接删除（不归档），TaskResult 跟随 CASCADE 删除，历史不保留
+  - 前端 axios 默认 10s 超时对耗时操作需逐个设长超时（已修 generateTalk/uploadPendingCsv/uploadPaidCsv）
+  - 测试数据/待支付订单.xlsx 和 .csv 误提交进仓库，需确认是否移除
 
 ## 下一步可选方向（按价值/紧迫度）
 
@@ -98,17 +107,18 @@
 
 ## 状态文件位置
 
-- `feature_list.json` — 15 个功能全 passing（含 data-004）
-- `claude-progress.md` — Session 021 记录
-- `openspec/specs/` — 4 个 capability 主 specs（固化，data-004 归档后 specs 增量更新）
-- `openspec/changes/auto-batch-and-csv-columns/` — data-004 活动 change（6 组 task 全勾选，待归档）
-- `openspec/changes/archive/` — data-002/003 已归档
+- `feature_list.json` — 16 个功能全 passing（含 task-003）
+- `claude-progress.md` — Session 023 记录
+- `openspec/specs/` — 4 个 capability 主 specs（固化，task-003 归档后 specs 增量更新）
+- `openspec/changes/` — 无活动 change（task-003 已归档到 archive/2026-09-23-*）
+- `openspec/changes/archive/` — data-002/003/004 + task-003 共 4 个已归档
 
 ## 给下一轮会话的重启路径
 
 1. `pwd` 确认仓库根
-2. 读 `claude-progress.md` 找 Session 021
-3. 读 `feature_list.json` 确认 15 功能 passing，无 in_progress
-4. 检查 `openspec/changes/auto-batch-and-csv-columns/` 活动 change（6 组 task 全勾选，可 /opsx:archive 归档）
+2. 读 `claude-progress.md` 找 Session 023
+3. 读 `feature_list.json` 确认 16 功能 passing，无 in_progress
+4. 检查 `openspec/changes/` 无活动 change（task-003 已归档）
 5. `./start.sh` 启动验证基线
+6. 选「下一步可选方向」之一开始
 6. 选「归档 data-003」或「下一步可选方向」之一开始

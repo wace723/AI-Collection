@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`（或 `./start.sh` 快速启动不跑测试）
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`
-- 当前最高优先级未完成功能：**无**（MVP + supervisor 增强 + 业务流程简化 + data-002/003 + data-004 CSV 列适配+自动跑批+导入结果 Modal 全完成）
-- 当前 blocker：无（data-004 已完成，186 passed + 真实联调通过，待归档）
+- 当前最高优先级未完成功能：**无**（MVP + supervisor 增强 + 业务流程简化 + data-002/003/004 + task-003 单活跃任务区间模型 全完成）
+- 当前 blocker：无（task-003 已完成，198 passed + 真实联调通过，已归档）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -558,3 +558,49 @@
   - 已支付 CSV 与待支付 CSV 订单号不重叠（测试数据特征），已支付导入无匹配全 skipped（非 bug，测试数据问题）
   - 真实待支付 CSV 含风险概率列，已支付 CSV 无风险概率列（业务方提供的数据格式）
 - 下一步最佳动作：data-004 已完整收尾。可 /opsx:archive 归档；后续可选：真实算法替换、PG 迁移、非功能测试
+
+### Session 022
+
+- 日期：2026-09-22
+- 本轮目标：归档 data-004 + AI 话术超时修复 + 自动分配按钮 + 启动自动分配 + 大文件导入超时
+- 已完成：
+  - **归档 data-004**：openspec/changes/auto-batch-and-csv-columns → archive/2026-09-22-*；主 specs 同步（data-ingestion ~2、import-payment-sync ~1、task-engine ~1）
+  - **AI 话术超时修复（fix）**：前端 axios 默认 10s 超时，AI 话术生成调用 glm-5.2 真实响应约 39s，10s 超时导致前端误报失败。generateTalk 单独设 30s 超时
+  - **AI 话术慢的根因（perf）**：glm-5.2 是 reasoning 模型，默认生成 reasoning_content（106 reasoning_tokens，finish_reason=length 截断）。透传 extra_body={'thinking':{'type':'disabled'}} 关闭思考，39s→2-8s。config.py 加 LLM_EXTRA_BODY 配置，LLM_TIMEOUT 90s→30s
+  - **Supervisor ReassignTab 加「自动分配」按钮**：复用现有 POST /api/tasks/assign/run API，点击调 runAssign()
+  - **系统启动时自动跑批后追加自动分配**：main.py _run_startup_batch() 跑批后追加 assign_pending_tasks(db)
+  - **大文件导入结果 Modal 不弹修复（fix）**：uploadPendingCsv/uploadPaidCsv 用默认 client 10s 超时，数据量大时导入+自动跑批>10s 超时→不弹 Modal。单独设 timeout=120000ms
+- 运行过的验证：各轮改动均验证（import OK + 相关测试 passed + npm build 通过）
+- 已知风险或未解决问题：
+  - 前端 axios 默认 10s 超时对任何耗时操作（AI生成、大文件导入）都会误超时，已逐个修（generateTalk 30s、uploadPendingCsv/uploadPaidCsv 120s）。后续耗时操作仍可能踩坑，可考虑整体调大默认超时
+  - 测试数据/待支付订单.xlsx 和 .csv 误提交进仓库（8363 行），需确认是否该移除
+
+### Session 023
+
+- 日期：2026-09-23
+- 本轮目标：诊断「改派页只有 HIGH、工作台只有 HIGH」根因 → task-003 单活跃任务区间模型重构
+- 诊断过程：
+  - 实测导入测试数据/待支付订单.csv（8348 行）：风险档分布正常（HIGH=2514/MEDIUM=3325/LOW=2509），不是「全是 HIGH」
+  - 看 dev.db 实际任务分布：13380 个任务，HIGH/IN_PROGRESS 只有 4 个，HIGH/PENDING_ASSIGN 7542 个
+  - 根因：HIGH 档有 3 轮配置（7/15/30 天），旧订单 3 轮都到期，同一天触发 4 次跑批（导入后+启动+定时+手动），每次推进一轮，4 次跑批给 HIGH 生成 7/15/30 三个并存任务共 7542 个 PENDING_ASSIGN
+  - 前端按风险档排序，HIGH 2514 个排最前，前 125 页全是 HIGH → 「只有 HIGH」错觉
+- 需求澄清（5 轮 AskUserQuestion）：
+  - 一个订单同一时间只有一个活跃任务（当前区间的）
+  - 跨区间删除旧任务（不管 DONE/IN_PROGRESS），生成新区间任务
+  - 已接通跨区间仍生成（每轮独立催收）
+  - 通用多轮适配各档配置
+  - 已支付导入删除活跃任务（替代 CANCELLED）
+- 已完成（task-003，6 组 25 task 全勾选）：
+  - batch.py generate_tasks 重写为单活跃任务区间模型：扫描所有待支付订单，按各档 day_offset 升序算 current_offset（最大 day_offset 使 win_bid+day_offset<=today），查现有活跃任务，同区间幂等/跨区间删旧生新
+  - parser.py ingest_paid_rows 回写 pay_status=PAID 时删除该订单所有活跃任务（替代 CANCELLED）
+  - BatchResult 字段 generated/deleted/skipped/by_tier（替代 idempotent_skipped/finalized），api/tasks.py+api/data.py+scheduler/jobs.py+schemas 同步
+  - 前端 types/api.ts BatchResultOut + Config Modal 展示适配
+- 运行过的验证：
+  - pytest -q 全量 → **198 passed**（186→198，无回归；test_task_generation 35 + test_e2e 3 + test_data_upload 11 重写适配单活跃任务）
+  - npm run build → 通过
+  - 真实联调（测试数据/待支付订单.csv 8348 行）：导入 inserted=8348→跑批 generated=8348 deleted=0 skipped=0 by_tier={HIGH:2514,MEDIUM:3325,LOW:2509}→有多活跃任务的订单数=0（单活跃验证）→跨区间删旧生新（age16→15天任务，跨区间age8→7天任务，活跃任务数始终=1）✓
+  - OpenSpec 4 artifacts done, 25/25 tasks done
+- 已知风险或未解决问题：
+  - task-003 是 BREAKING 重构，现有 tasks 表需清空重建（dev.db 已清空重跑，生产部署需清空）
+  - 旧任务直接删除（不归档），TaskResult 跟随 CASCADE 删除，历史不保留（业务接受）
+- 下一步最佳动作：task-003 已完整收尾并归档。16 功能全 passing，无活动 change
