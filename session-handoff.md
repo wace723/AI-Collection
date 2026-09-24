@@ -6,29 +6,23 @@
 
 ## 当前已验证
 
-- **全部完成**：MVP 12 功能 + supervisor 增强 + 业务流程简化 + data-002/003/004 + **task-003 单活跃任务区间模型**（已验证并归档）
-- 最近验证（Session 023）：
-  - 后端 pytest 全量 **198 passed**（无回归）
+- **全部完成**：MVP 12 功能 + supervisor 增强 + 业务流程简化 + data-002/003/004 + task-003 单活跃任务区间模型 + 体验优化（筛选/分页/改名）
+- 最近验证（Session 024）：
+  - 后端 pytest 相关测试 passed（test_workbench/test_reassign/test_supervisor 32 passed）
   - 前端 `npm run build` 通过
-  - 真实联调：导入 8348 订单 → 跑批 generated=8348 每订单一个活跃任务（有多活跃任务订单数=0）→ 跨区间删旧生新验证 ✓
-  - OpenSpec single-active-task-interval-model 25/25 tasks done，已归档
+  - 各轮小改均验证：ReassignTab 筛选+服务端分页、任务统计改名+处理中卡片
+  - 16 功能全 passing，无活动 change
 
-## 本轮改动总结（task-003 单活跃任务区间模型）
+## 本轮改动总结（Session 024 体验优化，纯前端小改）
 
-- **单活跃任务模型**：一个订单同一时间只有一个活跃任务（当前区间的），替代原多轮并存
-- **区间算法**：current_offset = 最大 day_offset 使 win_bid+day_offset<=today，按各档配置 day_offset 升序划区间
-- **跨区间删旧生新**：进入新区间删除旧活跃任务（不管 DONE/IN_PROGRESS），生成新区间任务
-- **已接通跨区间仍生成**：每轮独立催收，上一轮 DONE 不影响这轮
-- **通用多轮适配**：所有风险档按各自配置 day_offset 划区间（HIGH/MEDIUM/LOW 都可能多轮）
-- **已支付导入删除活跃任务**：FINALIZED + 删活跃任务（替代 CANCELLED）
-- **BatchResult 字段**：generated/deleted/skipped/by_tier（替代 idempotent_skipped/finalized）
+- **ReassignTab 加风险档筛选**：后端 list_tasks 加 risk_tier 过滤参数；前端加风险档下拉
+- **ReassignTab 改服务端分页 + 加当前负责人筛选**：服务端分页（点页码调后端），加负责人下拉，解决"只有 5 页 HIGH"问题
+- **任务统计 Tab 改名 + 加团队处理中任务**：「绩效统计」→「任务统计」，顶部加「团队处理中任务」卡片
 
-## 之前几轮的小改（Session 022，已合并）
+## 之前几轮（Session 022/023，已归档）
 
-- AI 话术超时修复：generateTalk 30s + 关闭 thinking（39s→2-8s）
-- Supervisor ReassignTab 加「自动分配」按钮
-- 系统启动时自动跑批后追加自动分配
-- 大文件导入结果 Modal 不弹修复：uploadPendingCsv/uploadPaidCsv 设 120s 超时
+- Session 022：data-004 归档 + AI 话术超时修复（关闭 thinking，39s→2-8s）+ 自动分配按钮 + 启动自动分配 + 大文件导入超时修复
+- Session 023：task-003 单活跃任务区间模型（一订单同时一任务，跨区间删旧生新），已归档
 
 ## 仍损坏或未验证
 
@@ -108,15 +102,15 @@
 ## 状态文件位置
 
 - `feature_list.json` — 16 个功能全 passing（含 task-003）
-- `claude-progress.md` — Session 023 记录
-- `openspec/specs/` — 4 个 capability 主 specs（固化，task-003 归档后 specs 增量更新）
+- `claude-progress.md` — Session 024 记录
+- `openspec/specs/` — 4 个 capability 主 specs（固化）
 - `openspec/changes/` — 无活动 change（task-003 已归档到 archive/2026-09-23-*）
 - `openspec/changes/archive/` — data-002/003/004 + task-003 共 4 个已归档
 
 ## 给下一轮会话的重启路径
 
 1. `pwd` 确认仓库根
-2. 读 `claude-progress.md` 找 Session 023
+2. 读 `claude-progress.md` 找 Session 024
 3. 读 `feature_list.json` 确认 16 功能 passing，无 in_progress
 4. 检查 `openspec/changes/` 无活动 change（task-003 已归档）
 5. `./start.sh` 启动验证基线

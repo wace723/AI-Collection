@@ -604,3 +604,17 @@
   - task-003 是 BREAKING 重构，现有 tasks 表需清空重建（dev.db 已清空重跑，生产部署需清空）
   - 旧任务直接删除（不归档），TaskResult 跟随 CASCADE 删除，历史不保留（业务接受）
 - 下一步最佳动作：task-003 已完整收尾并归档。16 功能全 passing，无活动 change
+
+### Session 024
+
+- 日期：2026-09-23 ~ 2026-09-24
+- 本轮目标：task-003 后的体验优化（ReassignTab 筛选+服务端分页、任务统计改名）
+- 已完成（纯前端小改，未走 OpenSpec）：
+  - **ReassignTab 加风险档筛选**：后端 list_tasks 加 risk_tier 过滤参数（size 上限 100→500）；前端 TaskListParams 加 risk_tier，ReassignTab 加风险档下拉（HIGH/MEDIUM/LOW/全部）
+  - **ReassignTab 改服务端分页 + 加当前负责人筛选**：Table pagination 改为服务端分页（current/pageSize/total/onChange），加 assigneeFilter 下拉；load 函数支持 tier/assignee/page 参数；解决"只有 5 页 HIGH"问题（原 size:100 只取前 100 条，按风险档排序前 100 全是 HIGH）
+  - **任务统计 Tab 改名 + 加团队处理中任务**：Tab 标签「绩效统计」→「任务统计」，Card 标题「催收员绩效」→「任务统计」，顶部 Statistic 加「团队处理中任务」（totalInProgress），3 列→4 列
+- 运行过的验证：各轮 npm run build 通过 + 后端 test_workbench/test_reassign/test_supervisor 32 passed（无回归）
+- 已知风险或未解决问题：
+  - 前端 axios 默认 10s 超时对耗时操作需逐个设长超时（已修 generateTalk/uploadPendingCsv/uploadPaidCsv，后续新耗时操作仍需注意）
+  - 测试数据/待支付订单.xlsx 和 .csv 误提交进仓库（待确认是否移除）
+- 下一步最佳动作：16 功能全 passing，无活动 change。可继续：真实联调深化、真实 LLM 调通、PG 迁移、话术模板管理 UI、非功能测试
