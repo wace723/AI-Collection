@@ -7,7 +7,7 @@ const UsersTab = lazy(() => import('./UsersTab'))
 const StaffTab = lazy(() => import('./StaffTab'))
 const ReassignTab = lazy(() => import('./ReassignTab'))
 
-/** 主管视图（SUPERVISOR/ADMIN）：员工管理 / 任务改派 / 绩效统计 */
+/** 主管视图（SUPERVISOR/ADMIN）：员工管理 / 任务改派 / 任务统计 */
 export default function Supervisor() {
   const [role, setRole] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -42,7 +42,7 @@ export default function Supervisor() {
         items={[
           {
             key: 'staff',
-            label: '绩效统计',
+            label: '任务统计',
             children: (
               <Suspense fallback={<Card loading />}>
                 <StaffTab />

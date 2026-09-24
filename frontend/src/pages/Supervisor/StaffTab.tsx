@@ -5,7 +5,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { getStaffPerformance } from '../../api/supervisor'
 import type { StaffPerformance } from '../../types/api'
 
-/** 绩效统计 Tab：各催收员任务完成情况 */
+/** 任务统计 Tab：各催收员任务完成情况 + 团队处理中任务 */
 export default function StaffTab() {
   const [data, setData] = useState<StaffPerformance[]>([])
   const [loading, setLoading] = useState(true)
@@ -26,6 +26,7 @@ export default function StaffTab() {
   }, [])
 
   const totalPending = data.reduce((s, d) => s + d.pending_count, 0)
+  const totalInProgress = data.reduce((s, d) => s + d.in_progress_count, 0)
   const totalDone = data.reduce((s, d) => s + d.done_count, 0)
   const totalPaid = data.reduce((s, d) => s + d.paid_count, 0)
 
@@ -57,17 +58,22 @@ export default function StaffTab() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Row gutter={16}>
-        <Col span={8}>
+        <Col span={6}>
           <Card loading={loading}>
             <Statistic title="团队待处理任务" value={totalPending} />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col span={6}>
+          <Card loading={loading}>
+            <Statistic title="团队处理中任务" value={totalInProgress} />
+          </Card>
+        </Col>
+        <Col span={6}>
           <Card loading={loading}>
             <Statistic title="团队已完成" value={totalDone} />
           </Card>
         </Col>
-        <Col span={8}>
+        <Col span={6}>
           <Card loading={loading}>
             <Statistic title="团队回款数" value={totalPaid} suffix="笔" />
           </Card>
@@ -75,7 +81,7 @@ export default function StaffTab() {
       </Row>
 
       <Card
-        title="催收员绩效"
+        title="任务统计"
         extra={
           <Button icon={<ReloadOutlined />} onClick={load}>
             刷新
