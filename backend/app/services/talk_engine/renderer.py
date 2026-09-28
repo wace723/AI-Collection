@@ -3,10 +3,8 @@
 占位符注册表见 placeholders.py（固定模板与 AI 模板共享）。本模块负责把注册的
 占位符替换为实际值，并保证渲染后无残留花括号。
 
-支持占位符（注册表）：
-    {供应商名称} {service_fee_order_no} {订单号} {风险档} {场景} {应催日} {会员状态}
-    {标的名称} {概算金额} {历史中标率} {账龄段} {账龄天数}
-    {工程局单位} {下属单位} {注册省份} {轮次}
+占位符覆盖 Order + OrderFeature 全部业务字段（标识/标的/风险/催收/特征），
+key 沿用 CSV 业务列名（中文为主）。金额/比率做友好格式化，缺失值为空串。
 """
 
 from __future__ import annotations
@@ -29,6 +27,35 @@ def _fmt_money(amount) -> str:
         return str(amount)
 
 
+def _fmt_rate(rate, *, as_percent: bool = False) -> str:
+    """比率格式化：None → 空。as_percent=True 时乘 100 显示百分号。"""
+    if rate is None:
+        return ""
+    try:
+        f = float(rate)
+        return f"{f:.2%}" if as_percent else f"{f:.4f}"
+    except (TypeError, ValueError):
+        return str(rate)
+
+
+def _fmt_int(v) -> str:
+    """整数格式化：None → 空。"""
+    if v is None:
+        return ""
+    try:
+        return str(int(v))
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def _fmt_date(d) -> str:
+    """日期格式化：None → 空；date/datetime → isoformat 日期部分。"""
+    if d is None:
+        return ""
+    iso = getattr(d, "isoformat", lambda: str(d))()
+    return iso.split("T")[0] if "T" in iso else iso
+
+
 def _round_num(scene: str) -> str:
     """从 ROUND_N 提取轮次序号 N（如 ROUND_2 → 2；非 ROUND_N 返回原值）。"""
     if scene and scene.startswith("ROUND_"):
@@ -49,34 +76,67 @@ def build_values(
         today: 账龄基准日，默认 date.today()
     """
     today = today or date.today()
-    is_member = bool(feature and feature.is_member_at_win)
+    o = order
+    f = feature
+    is_member = bool(f and f.is_member_at_win)
 
     # 账龄（天）与账龄段
     age_days = 0
-    if order and order.win_bid_date:
-        age_days = max(0, (today - order.win_bid_date).days)
+    if o and o.win_bid_date:
+        age_days = max(0, (today - o.win_bid_date).days)
 
     return {
-        "供应商名称": order.supplier_name if order else "",
-        "service_fee_order_no": order.service_fee_order_no if order else "",
-        "订单号": order.service_fee_order_no if order else "",
-        "标的名称": order.subject_name if order else "",
-        "概算金额": _fmt_money(order.subject_estimate_amount if order else None),
-        "历史中标率": (
-            f"{float(feature.win_rate):.2%}"
-            if feature and feature.win_rate is not None
-            else ""
-        ),
-        "账龄段": map_age_bucket(age_days),
-        "账龄天数": str(age_days),
-        "工程局单位": order.engineering_bureau if order else "",
-        "下属单位": order.subsidiary if order else "",
-        "注册省份": order.register_province if order else "",
-        "会员状态": "会员" if is_member else "非会员",
+        # ── 基础 ──
+        "供应商名称": o.supplier_name if o else "",
+        "供应商编号": o.supplier_no if o else "",
+        "service_fee_order_no": o.service_fee_order_no if o else "",
+        "订单号": o.service_fee_order_no if o else "",
+        "业务编号": o.biz_no if o else "",
+        # ── 标的 ──
+        "标的名称": o.subject_name if o else "",
+        "概算金额": _fmt_money(o.subject_estimate_amount if o else None),
+        "招标方式": o.tender_type_desc if o else "",
+        "采购方式": o.purchase_type_desc if o else "",
+        "中标品类": o.bid_category if o else "",
+        "合同类型": o.contract_type if o else "",
+        "订单生成日期": _fmt_date(o.order_generated_date if o else None),
+        # ── 催收 ──
         "风险档": task.risk_tier,
+        "风险概率": _fmt_int(o.risk_prob if o else None),
         "场景": task.scene,
         "轮次": _round_num(task.scene),
-        "应催日": task.due_date.isoformat() if task.due_date else "",
+        "应催日": _fmt_date(task.due_date),
+        "账龄段": map_age_bucket(age_days),
+        "账龄天数": str(age_days),
+        # ── 供应商归属/注册 ──
+        "工程局单位": o.engineering_bureau if o else "",
+        "下属单位": o.subsidiary if o else "",
+        "注册省份": o.register_province if o else "",
+        "注册地区": o.register_area if o else "",
+        "会员状态": "会员" if is_member else "非会员",
+        # ── A 类 缴费历史 ──
+        "历史平台使用费订单数": _fmt_int(f.history_fee_order_count if f else None),
+        "上次缴费历时_天": _fmt_int(f.last_pay_duration_days if f else None),
+        "历史缴费平均历时_天": _fmt_int(f.avg_pay_duration_days if f else None),
+        # ── B 类 活跃度与支付 ──
+        "服务市场历史支付金额": _fmt_money(f.fwsc_history_pay_amount if f else None),
+        "历史报名次数": _fmt_int(f.signup_count if f else None),
+        "历史投标次数": _fmt_int(f.bidding_count if f else None),
+        "历史中标次数": _fmt_int(f.win_count if f else None),
+        "历史中标率": _fmt_rate(f.win_rate if f else None, as_percent=True),
+        "近90天投标活跃度": _fmt_int(f.active_90d if f else None),
+        "首次中标距本次间隔_天": _fmt_int(f.first_win_interval_days if f else None),
+        "中标前购买会员次数": _fmt_int(f.member_purchase_count_before_win if f else None),
+        # ── C 类 资质与标签 ──
+        "注册资金": _fmt_money(f.register_fund if f else None),
+        "注册时间距中标间隔_天": _fmt_int(f.register_interval_days if f else None),
+        "平台入驻时间距中标间隔_天": _fmt_int(f.in_date_interval_days if f else None),
+        "最早入库时间距中标间隔_天": _fmt_int(f.entry_interval_days if f else None),
+        "供应商品类": f.supplier_categories if f else "",
+        "标签表历史中标率": _fmt_rate(f.ads_win_rate if f else None, as_percent=True),
+        "股份优质评级次数": _fmt_int(f.high_quality_cnt if f else None),
+        "合作单位数量": _fmt_int(f.cooperate_org_num if f else None),
+        "累计履约项目数": _fmt_int(f.total_perform_project_num if f else None),
     }
 
 
