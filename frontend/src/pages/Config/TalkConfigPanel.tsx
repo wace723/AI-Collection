@@ -364,8 +364,9 @@ function PlaceholderTextArea({
           flexWrap: 'wrap',
           gap: 4,
           marginBottom: 6,
-          maxHeight: 88,
-          overflowY: 'auto',
+          padding: 8,
+          background: '#fafafa',
+          borderRadius: 4,
         }}
       >
         {placeholders.map((p) => (
