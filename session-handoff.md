@@ -6,55 +6,59 @@
 
 ## 当前已验证
 
-- **已规划待实施**：16 功能全 passing + talk-003 管理员话术配置后台（in_progress，OpenSpec change admin-talk-config 已规划 4/4 artifacts，待 /opsx:apply 实施）
-- 最近进展（Session 025）：
-  - 深度探索「话术配置后台会不会有问题」→ 列 9 项 P0/P1/P2 问题
-  - 5 轮 AskUserQuestion 澄清，9 项核心决策全敲定（联动/存储/scene/匹配键/漂移/兜底/数据）
-  - OpenSpec change `admin-talk-config` 4/4 artifacts 生成（proposal/design/specs/tasks）
-  - feature_list.json 登记 talk-003（priority 17，in_progress，BREAKING）
-  - 无代码改动，无验证（纯规划）
+- **全部完成**：17 功能全 passing（含 talk-003 管理员话术配置后台，待归档）
+- 最近进展（Session 026）：
+  - 实施 talk-003：话术匹配四维→二维 [风险档×轮次]，scene→ROUND_N，固定+AI提示词模板，覆盖度矩阵，占位符校验，合规基线
+  - pytest 全量 222 passed（无回归），npm build 通过，真实联调全通
+  - 49/49 tasks done，feature_list talk-003 切 passing
+  - 待 /opsx:archive 归档
 
-## 本轮改动总结（Session 025 talk-003 规划）
+## 本轮改动总结（Session 026 talk-003 实施）
 
-- **话术匹配键四维→二维**：[风险档×账龄段×场景×用户特征] → [风险档×轮次]，账龄段/用户特征降为话术变量
-- **scene 改 ROUND_N**：固定枚举 FIRST/SECOND/THIRD → ROUND_N（seq 驱动，支持任意轮次）
+- **话术匹配二维化**：[风险档×账龄段×场景×用户特征] → [风险档×轮次]，账龄段/用户特征降为变量，去 ANY 兜底
+- **scene 改 ROUND_N**：由 schedules seq 自动生成，支持任意轮次，迁移映射旧值
 - **两类模板一张表**：TalkTemplate 加 template_type（FIXED/AI_PROMPT），AI_PROMPT 存 system_prompt+user_prompt
-- **占位符统一注册+校验**：纳入标的名称等新字段，保存校验非法占位符，防渲染残留
-- **覆盖度矩阵+联动提示**：按 active risk_config 展开 [档×轮] 矩阵，缺口高亮可点击，风险档变更提示复核（不阻断）
-- **合规基线不可绕过**：AI system prompt 追加合规基线，is_compliant 永不可关
-- BREAKING：丢弃 6 条默认话术清空重配、不保留 ANY 兜底（未配显示空状态）
+- **占位符注册表+校验**：16 个占位符（含标的名称等），保存校验非法占位符，防渲染残留
+- **覆盖度矩阵+联动提示**：[档×轮] 矩阵缺口高亮可点击，风险档变更提示复核（不阻断）
+- **AI 合规基线不可绕过**：后台 system prompt 追加合规基线，is_compliant 永开
+- **新增 API**：模板 CRUD（ADMIN）+ 占位符列表 + 覆盖度矩阵；PUT /risk 附加 coverage_hint
+- **新增前端**：TalkConfigPanel（覆盖度矩阵+模板编辑抽屉+插入变量）
 
-## 之前几轮（Session 022/023/024，已归档/收尾）
+## 之前几轮（Session 022/023/024/025，已归档/收尾）
 
-- Session 022：data-004 归档 + AI 话术超时修复（关闭 thinking，39s→2-8s）+ 自动分配按钮 + 启动自动分配 + 大文件导入超时修复
-- Session 023：task-003 单活跃任务区间模型（一订单同时一任务，跨区间删旧生新），已归档
-- Session 024：ReassignTab 筛选+服务端分页、任务统计改名+处理中卡片（纯前端小改）
+- Session 022：data-004 归档 + AI 话术超时修复 + 自动分配 + 大文件导入超时
+- Session 023：task-003 单活跃任务区间模型，已归档
+- Session 024：ReassignTab 筛选+服务端分页、任务统计改名（纯前端小改）
+- Session 025：talk-003 规划（OpenSpec 4/4 artifacts + 9 项决策）
 
 ## 仍损坏或未验证
 
-- 已知缺陷：无（talk-003 仅规划，未动代码）
-- 未验证路径：talk-003 实施后的二维匹配/覆盖度/AI 模板化（待 /opsx:apply 实施后验证）
+- 已知缺陷：无（talk-003 已完整收尾验证）
+- 未验证路径：无
 - 风险/遗留：
-  - talk-003 BREAKING：现有 6 条默认话术将清空重配；scene 值需迁移映射 FIRST→ROUND_1 等
-  - task-003 BREAKING 已落地：现有 tasks 表需清空重建（dev.db 已清空，生产部署需清空）
-  - 前端 axios 默认 10s 超时对耗时操作需逐个设长超时（已修 generateTalk/uploadPendingCsv/uploadPaidCsv）
+  - talk-003 BREAKING 已落地：旧 6 条话术清空重配（新 seed 6 条 ROUND_N 版）、scene 值迁移映射
+  - 占位符注册表代码维护，加新变量需改代码（MVP 16 个已覆盖主要字段）
+  - 一档一轮一类型唯一，不支持同格多模板 A/B（Non-Goal）
+  - 前端 axios 默认 10s 超时对耗时操作需逐个设长超时（历史记录）
   - 测试数据/待支付订单.xlsx 和 .csv 误提交进仓库，需确认是否移除
 
 ## 下一步可选方向（按价值/紧迫度）
 
-**第一档 · 立即实施 talk-003**
-1. `/opsx:apply` 实施 talk-003（按 tasks.md 9 组步骤：模型迁移→scene改造→占位符→匹配器→AI模板→覆盖度→API→前端→测试验证）
+**第一档 · 收尾**
+1. `/opsx:archive` 归档 admin-talk-config（specs 固化到主 specs）
+2. 真实 LLM 调通体验优化（glm 响应慢，可加流式 SSE）
 
-**第二档 · 收尾 + 让系统真正用起来**
-2. 真实联调深化：待支付+已支付 CSV 订单号对齐，验证已支付回写终态停催全流程
-3. 真实 LLM 调通体验优化（glm 响应 40s，可加流式 SSE）
+**第二档 · 让系统真正用起来**
+3. 真实联调深化：待支付+已支付 CSV 订单号对齐，验证已支付回写终态停催全流程
+4. 真实业务 CSV 灌入验证全流程
 
 **第三档 · 上生产前硬骨头**
-4. 真实风险算法替换（需时间切割防数据泄漏）——当前风险概率从 CSV 来，算法由线下做
-5. PostgreSQL 迁移 + 时区统一
+5. 真实风险算法替换（需时间切割防数据泄漏）
+6. PostgreSQL 迁移 + 时区统一
 
 **第四档 · 体验/功能补全**
-6. 非功能测试（TC-NF-01/02 跑批性能 10000 笔≤5min、工作台列表≤2s）
+7. 非功能测试（TC-NF-01/02 跑批性能 10000 笔≤5min、工作台列表≤2s）
+8. 话术模板 A/B 测试（同格多模板 priority 排序）
 
 ## 本轮改动总结（data-002，已归档）
 
@@ -108,17 +112,17 @@
 
 ## 状态文件位置
 
-- `feature_list.json` — 16 功能 passing + talk-003 in_progress（priority 17）
-- `claude-progress.md` — Session 025 记录
-- `openspec/specs/` — 4 个 capability 主 specs（固化）
-- `openspec/changes/admin-talk-config/` — 活动 change（4/4 artifacts，待 /opsx:apply）
+- `feature_list.json` — 17 功能全 passing（含 talk-003，待归档）
+- `claude-progress.md` — Session 026 记录
+- `openspec/specs/` — 4 个 capability 主 specs（固化）+ admin-talk-config 待归档
+- `openspec/changes/admin-talk-config/` — change 完成（4/4 artifacts，49/49 tasks，待归档）
 - `openspec/changes/archive/` — data-002/003/004 + task-003 共 4 个已归档
 
 ## 给下一轮会话的重启路径
 
 1. `pwd` 确认仓库根
-2. 读 `claude-progress.md` 找 Session 025
-3. 读 `feature_list.json` 确认 talk-003 in_progress
-4. 检查 `openspec/changes/admin-talk-config/`（活动 change，4/4 artifacts ready）
+2. 读 `claude-progress.md` 找 Session 026
+3. 读 `feature_list.json` 确认 17 功能 passing
+4. 检查 `openspec/changes/admin-talk-config/`（完成待归档）
 5. `./start.sh` 启动验证基线
-6. 运行 `/opsx:apply` 实施 talk-003（按 tasks.md 9 组步骤）
+6. 运行 `/opsx:archive` 归档 admin-talk-config，或选「下一步可选方向」之一开始

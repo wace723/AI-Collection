@@ -22,13 +22,14 @@ from app.models.risk import CollectionSchedule, RiskConfig
 from app.schemas.config import RiskConfigUpdateIn, ScheduleIn
 
 # 默认催收时点（docs/02 §3.2.4）：
-# HIGH → 7/15/30 天（FIRST/SECOND/THIRD），MEDIUM → 30 天（FIRST），LOW → 90 天（FIRST）
+# HIGH → 7/15/30 天（ROUND_1/2/3），MEDIUM → 30 天（ROUND_1），LOW → 90 天（ROUND_1）
+# talk-003：scene 由 seq 自动生成 ROUND_{seq}（ScheduleIn.scene 传 None 即可）
 DEFAULT_SCHEDULES: list[ScheduleIn] = [
-    ScheduleIn(risk_tier="HIGH", day_offset=7, scene="FIRST", seq=1),
-    ScheduleIn(risk_tier="HIGH", day_offset=15, scene="SECOND", seq=2),
-    ScheduleIn(risk_tier="HIGH", day_offset=30, scene="THIRD", seq=3),
-    ScheduleIn(risk_tier="MEDIUM", day_offset=30, scene="FIRST", seq=1),
-    ScheduleIn(risk_tier="LOW", day_offset=90, scene="FIRST", seq=1),
+    ScheduleIn(risk_tier="HIGH", day_offset=7, scene="ROUND_1", seq=1),
+    ScheduleIn(risk_tier="HIGH", day_offset=15, scene="ROUND_2", seq=2),
+    ScheduleIn(risk_tier="HIGH", day_offset=30, scene="ROUND_3", seq=3),
+    ScheduleIn(risk_tier="MEDIUM", day_offset=30, scene="ROUND_1", seq=1),
+    ScheduleIn(risk_tier="LOW", day_offset=90, scene="ROUND_1", seq=1),
 ]
 
 
@@ -135,7 +136,8 @@ def _insert_version(
                 risk_config_id=config.id,
                 risk_tier=s.risk_tier.value,
                 day_offset=s.day_offset,
-                scene=s.scene.value,
+                # talk-003：scene 按 seq 自动生成 ROUND_{seq}（忽略 ScheduleIn.scene 输入）
+                scene=f"ROUND_{s.seq}",
                 seq=s.seq,
                 is_active=True,
             )

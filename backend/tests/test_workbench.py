@@ -81,7 +81,7 @@ def _make_task(
     due_date=None,
     status=IN_PROGRESS,
     assignee_id=None,
-    scene="FIRST",
+    scene="ROUND_1",
     result=None,
 ) -> Task:
     task = Task(

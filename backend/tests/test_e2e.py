@@ -153,7 +153,7 @@ def test_e2e_01_full_collection_loop(client, db_session, seed_users):
 
     构造 20 条 HIGH 风险订单（风险概率=75），win_bid_date=today-8天。
     HIGH 档 day_offset=[7,15,30]，age=8 → 区间 [7,15)，current_offset=7，
-    导入自动跑批生成 20 条 FIRST 任务（generated=20）。
+    导入自动跑批生成 20 条 ROUND_1 任务（generated=20）。
 
     task-003 单活跃任务区间模型：
     - batch_result 字段用 generated/deleted/skipped/by_tier（不再有 finalized）。
@@ -185,7 +185,7 @@ def test_e2e_01_full_collection_loop(client, db_session, seed_users):
     assert "by_tier" in batch_result
     assert "finalized" not in batch_result
     # HIGH 档首轮 day_offset=7，win_bid=today-8 → age=8 >= 7，区间 [7,15)，current_offset=7
-    # 生成 20 条 FIRST 任务；deleted=0（首次无旧任务），skipped=0（首次无同区间任务）
+    # 生成 20 条 ROUND_1 任务；deleted=0（首次无旧任务），skipped=0（首次无同区间任务）
     assert batch_result["generated"] == 20
     assert batch_result["deleted"] == 0
     assert batch_result["skipped"] == 0
@@ -243,7 +243,9 @@ def test_e2e_01_full_collection_loop(client, db_session, seed_users):
         headers=_headers(client, "collector1"),
     )
     assert resp.status_code == 200, resp.text
-    assert len(resp.json()["data"]["templates"]) >= 1
+    recommend_data = resp.json()["data"]
+    assert recommend_data["has_talk"] is True
+    assert len(recommend_data["templates"]) >= 1
 
     # 步骤8：AI 生成话术（mock）
     resp = client.post(
@@ -304,7 +306,7 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
 
     task-003 单活跃任务区间模型（BREAKING）：
     - 一个订单同一时间只有一个活跃任务。
-    - 第7天跑批：age=7，区间 [7,15)，current_offset=7，生成 FIRST 任务。
+    - 第7天跑批：age=7，区间 [7,15)，current_offset=7，生成 ROUND_1 任务。
     - 回填 REACHED → DONE + COLLECTED。
     - 第15天跑批：age=15，区间 [15,30)，current_offset=15，**删除旧的 7 天任务**（deleted=1），
       生成 15 天任务（generated=1），collection_state→PENDING_COLLECTION。
@@ -344,7 +346,7 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
     order.collection_state = "NO_NEED"
     db_session.commit()
 
-    # 第7天跑批：age=7，区间 [7,15)，current_offset=7，生成 FIRST 任务
+    # 第7天跑批：age=7，区间 [7,15)，current_offset=7，生成 ROUND_1 任务
     result_d7 = run_batch(
         db_session, today=base_date + timedelta(days=7), recalc_risk=False
     )
@@ -357,7 +359,7 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
     )
     first_tasks = [t for t in tasks_d7 if t.day_offset == 7]
     assert len(first_tasks) == 1
-    assert first_tasks[0].scene == "FIRST"
+    assert first_tasks[0].scene == "ROUND_1"
     assert first_tasks[0].status == "PENDING_ASSIGN"
     assert order.collection_state == PENDING_COLLECTION
 
@@ -397,7 +399,7 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
     )
     second_tasks = [t for t in tasks_d15 if t.day_offset == 15]
     assert len(second_tasks) == 1
-    assert second_tasks[0].scene == "SECOND"
+    assert second_tasks[0].scene == "ROUND_2"
     assert second_tasks[0].status == "PENDING_ASSIGN"
     # task-003 验证：7 天任务已被删除（跨区间删旧生新）
     assert len([t for t in tasks_d15 if t.day_offset == 7]) == 0
@@ -410,7 +412,7 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
     ]
     assert len(active_d15) == 1
 
-    # 回填 SECOND → DONE + COLLECTED
+    # 回填 ROUND_2 → DONE + COLLECTED
     assign_pending_tasks(db_session)
     db_session.commit()
     task2 = second_tasks[0]
@@ -439,7 +441,7 @@ def test_e2e_02_high_risk_multi_round(client, db_session, seed_users):
     )
     third_tasks = [t for t in tasks_d30 if t.day_offset == 30]
     assert len(third_tasks) == 1
-    assert third_tasks[0].scene == "THIRD"
+    assert third_tasks[0].scene == "ROUND_3"
     assert third_tasks[0].status == "PENDING_ASSIGN"
     # 15 天任务已被删除
     assert len([t for t in tasks_d30 if t.day_offset == 15]) == 0
@@ -463,7 +465,7 @@ def test_e2e_03_paid_order_never_collected(client, db_session, seed_users):
 
     task-003 单活跃任务区间模型：
     - upload-pending 导入后自动跑批：win_bid=today-90，HIGH 首轮 day_offset=7 已到，
-      导入时自动生成 FIRST 任务（导入时订单仍待支付，属正常催收）。
+      导入时自动生成 ROUND_1 任务（导入时订单仍待支付，属正常催收）。
     - 标记 PAID 后再跑批（API + service 层多日推进）：已支付订单被 pay_status 门控跳过，
       不推进、不生成新任务。本测试断言「标记 PAID 后的跑批不生成新任务」
       （而非「全程不生成任何任务」，因导入时已自动跑批生成过）。
@@ -492,7 +494,7 @@ def test_e2e_03_paid_order_never_collected(client, db_session, seed_users):
     tasks_before_paid = (
         db_session.query(Task).filter(Task.order_id == order.id).all()
     )
-    assert len(tasks_before_paid) == 1  # 导入自动跑批生成的 FIRST
+    assert len(tasks_before_paid) == 1  # 导入自动跑批生成的 ROUND_1
 
     # 手动标记为已支付（不取消已存在任务，仅阻止后续跑批生成新任务）
     order.pay_status = "PAID"

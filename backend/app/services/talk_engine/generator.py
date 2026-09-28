@@ -1,13 +1,16 @@
-"""AI 话术生成编排（talk-002）。
+"""AI 话术生成编排（talk-002 → talk-003 模板化）。
 
-流程（docs/02 §4.3）：取生效配置 → 构造 prompt → 调 LLMProvider → 写 AIConversation。
+流程（docs/02 §4.3）：取生效配置 → 匹配 AI_PROMPT 模板（无则降级内置默认 prompt）
+→ 渲染 system/user prompt（合规基线追加后台 system）→ 调 LLMProvider → 写 AIConversation。
 设计约束 #2：LLM 失败必须降级到模板话术，不阻断催收。
+talk-003 D7：后台 AI system prompt 为追加而非覆盖合规基线；is_compliant 永不可关。
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import date
 
 from sqlalchemy.orm import Session
 
@@ -16,11 +19,21 @@ from app.models.talk import AIConversation
 from app.models.task import Task
 from app.services.talk_engine.ai_config_service import get_effective_ai_config
 from app.services.talk_engine.llm_provider import get_llm_provider
+from app.services.talk_engine.matcher import match_templates
+from app.services.talk_engine.renderer import build_values, render
 from app.services.talk_engine.recommend import recommend_talks
 
 logger = logging.getLogger(__name__)
 
-# 合规校验：LLM 输出不可预测，system prompt 约束是第一道防线，
+# 合规基线（D7）：所有 AI system prompt 前置拼接，不可被后台配置覆盖。
+# talk-002 原 build_prompt 的合规约束部分，提取为模块级常量供复用。
+_COMPLIANCE_BASELINE = (
+    "你是平台使用费催收助手。请基于以下信息生成专业、合规的催收话术："
+    "有礼有节，明确告知缴费义务与逾期影响，给出具体缴费指引。"
+    "不使用威胁、辱骂或虚假承诺。"
+)
+
+# 合规校验：LLM 输出不可预测，合规基线是第一道防线（system prompt 约束），
 # 这里是第二道（输出层）纵深防线（技能原则6 + docs/03 TC-TALK-10）。
 # 命中任一关键词 → 判定不合规 → 降级模板。关键词按业务可扩展。
 _VIOLATION_KEYWORDS = (
@@ -30,7 +43,10 @@ _VIOLATION_KEYWORDS = (
 
 
 def is_compliant(content: str) -> bool:
-    """轻量合规校验：不含威胁/辱骂/虚假承诺类关键词。"""
+    """轻量合规校验：不含威胁/辱骂/虚假承诺类关键词。
+
+    D7：此校验永远启用，不可通过任何配置关闭。
+    """
     lower = content.lower()
     return not any(kw.lower() in lower for kw in _VIOLATION_KEYWORDS)
 
@@ -47,18 +63,9 @@ class GenerateTalkResult:
     fallback_reason: str | None = None
 
 
-def build_prompt(
-    task: Task,
-    order: Order | None,
-    feature: OrderFeature | None,
-    template_hint: str | None,
-) -> tuple[str, str]:
-    """组装 system / user prompt（参考 docs/02 §4.3.3）。"""
-    system = (
-        "你是平台使用费催收助手。请基于以下信息生成专业、合规的催收话术："
-        "有礼有节，明确告知缴费义务与逾期影响，给出具体缴费指引。"
-        "不使用威胁、辱骂或虚假承诺。"
-    )
+def _default_prompts(task: Task, order: Order | None, feature: OrderFeature | None) -> tuple[str, str]:
+    """内置默认 system/user prompt（无 AI_PROMPT 模板时降级用，保证 AI 链路不断）。"""
+    system = _COMPLIANCE_BASELINE
     lines = [
         f"供应商：{order.supplier_name if order else '未知'}",
         f"订单号：{order.service_fee_order_no if order else '未知'}",
@@ -68,12 +75,36 @@ def build_prompt(
     ]
     if feature:
         lines.append(
-            f"用户特征：历史中标率 {feature.win_rate}，"
-            f"会员 {feature.is_member_at_win}"
+            f"用户特征：历史中标率 {feature.win_rate}，会员 {feature.is_member_at_win}"
         )
-    if template_hint:
-        lines.append(f"参考模板风格：{template_hint}")
     return system, "\n".join(lines)
+
+
+def build_prompt(
+    db: Session,
+    task: Task,
+    order: Order | None,
+    feature: OrderFeature | None,
+    *,
+    today: date | None = None,
+) -> tuple[str, str]:
+    """组装 system / user prompt（talk-003：优先用 AI_PROMPT 模板，无则降级默认）。
+
+    - 命中 AI_PROMPT 模板：渲染 system_prompt + user_prompt，system = 合规基线 + 后台 system
+    - 无 AI_PROMPT 模板：降级内置默认 prompt（合规基线 system + 默认 user）
+    """
+    today = today or date.today()
+    ai_templates = match_templates(db, task, template_type="AI_PROMPT")
+
+    if not ai_templates:
+        return _default_prompts(task, order, feature)
+
+    tmpl = ai_templates[0]
+    # system = 合规基线 + 后台 system_prompt（追加非覆盖，D7）
+    admin_system = render(tmpl.system_prompt or "", task=task, order=order, feature=feature, today=today)
+    system = f"{_COMPLIANCE_BASELINE}\n{admin_system}" if admin_system.strip() else _COMPLIANCE_BASELINE
+    user_prompt = render(tmpl.user_prompt or "", task=task, order=order, feature=feature, today=today)
+    return system, user_prompt
 
 
 def generate_talk(db: Session, task: Task) -> GenerateTalkResult:
@@ -96,7 +127,7 @@ def generate_talk(db: Session, task: Task) -> GenerateTalkResult:
             fallback_reason="AI 话术已关闭，返回模板话术",
         )
 
-    system, user_prompt = build_prompt(task, order, feature, template_hint)
+    system, user_prompt = build_prompt(db, task, order, feature)
     provider = get_llm_provider(eff)
 
     try:
@@ -122,7 +153,7 @@ def generate_talk(db: Session, task: Task) -> GenerateTalkResult:
             fallback_reason="LLM 调用失败，已降级模板",
         )
 
-    # 第二道防线：输出合规校验（TC-TALK-10）。不通过则降级模板，
+    # 第二道防线：输出合规校验（TC-TALK-10，D7 永不可关）。不通过则降级模板，
     # 但仍记录原始 LLM 输出到 AIConversation 以便审计。
     if not is_compliant(content):
         logger.warning(

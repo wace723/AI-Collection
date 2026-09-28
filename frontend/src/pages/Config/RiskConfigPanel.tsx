@@ -35,11 +35,11 @@ const RISK_TIER_OPTIONS: { label: string; value: RiskTier }[] = [
 ]
 
 const SCENE_OPTIONS: { label: string; value: Scene }[] = [
-  { label: '首轮', value: 'FIRST' },
-  { label: '二轮', value: 'SECOND' },
-  { label: '三轮', value: 'THIRD' },
-  { label: '异议', value: 'DISPUTE' },
-  { label: '承诺', value: 'PROMISE' },
+  { label: '第1轮', value: 'ROUND_1' },
+  { label: '第2轮', value: 'ROUND_2' },
+  { label: '第3轮', value: 'ROUND_3' },
+  { label: '第4轮', value: 'ROUND_4' },
+  { label: '第5轮', value: 'ROUND_5' },
 ]
 
 const TIER_COLOR: Record<RiskTier, string> = {
@@ -50,11 +50,11 @@ const TIER_COLOR: Record<RiskTier, string> = {
 
 /** 默认催收时点（与后端 DEFAULT_SCHEDULES 一致） */
 const DEFAULT_SCHEDULES: CollectionSchedule[] = [
-  { risk_tier: 'HIGH', day_offset: 7, scene: 'FIRST', seq: 1, is_active: true },
-  { risk_tier: 'HIGH', day_offset: 15, scene: 'SECOND', seq: 2, is_active: true },
-  { risk_tier: 'HIGH', day_offset: 30, scene: 'THIRD', seq: 3, is_active: true },
-  { risk_tier: 'MEDIUM', day_offset: 30, scene: 'FIRST', seq: 1, is_active: true },
-  { risk_tier: 'LOW', day_offset: 90, scene: 'FIRST', seq: 1, is_active: true },
+  { risk_tier: 'HIGH', day_offset: 7, scene: 'ROUND_1', seq: 1, is_active: true },
+  { risk_tier: 'HIGH', day_offset: 15, scene: 'ROUND_2', seq: 2, is_active: true },
+  { risk_tier: 'HIGH', day_offset: 30, scene: 'ROUND_3', seq: 3, is_active: true },
+  { risk_tier: 'MEDIUM', day_offset: 30, scene: 'ROUND_1', seq: 1, is_active: true },
+  { risk_tier: 'LOW', day_offset: 90, scene: 'ROUND_1', seq: 1, is_active: true },
 ]
 
 const scheduleColumns: ColumnsType<CollectionSchedule> = [
@@ -132,8 +132,26 @@ export default function RiskConfigPanel() {
           is_active: true,
         })),
       }
-      await updateRiskConfig(payload)
-      message.success('配置已更新，生成新版本')
+      await updateRiskConfig(payload).then((cfg) => {
+        message.success('配置已更新，生成新版本')
+        // talk-003：风险档变更后附加话术覆盖度提示（不阻断）
+        const hint = cfg.coverage_hint
+        if (hint) {
+          const parts: string[] = []
+          if (hint.added_rounds?.length) {
+            parts.push(`新增轮次 ${hint.added_rounds.map((r) => `${r.risk_tier} ${r.scene}`).join('、')} 建议补充话术`)
+          }
+          if (hint.deleted_rounds?.length) {
+            parts.push(`删除轮次 ${hint.deleted_rounds.map((r) => `${r.risk_tier} ${r.scene}`).join('、')} 话术已成孤儿，建议清理`)
+          }
+          if (hint.missing_cells?.length) {
+            parts.push(`当前共 ${hint.missing_cells.length} 格话术缺口，建议在「话术配置」面板补全`)
+          }
+          if (parts.length) {
+            message.warning(parts.join('；'), 6)
+          }
+        }
+      })
       setEditOpen(false)
       refresh()
     } catch (err) {
@@ -386,7 +404,7 @@ export default function RiskConfigPanel() {
                     add({
                       risk_tier: 'HIGH',
                       day_offset: 7,
-                      scene: 'FIRST',
+                      scene: 'ROUND_1',
                       seq: 1,
                       is_active: true,
                     })

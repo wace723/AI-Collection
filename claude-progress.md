@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`（或 `./start.sh` 快速启动不跑测试）
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`
-- 当前最高优先级未完成功能：**talk-003 管理员话术配置后台**（in_progress，OpenSpec change admin-talk-config 已规划 4/4 artifacts，待 /opsx:apply 实施）
-- 当前 blocker：无（talk-003 规划完成，9 项决策全敲定，待实施）
+- 当前最高优先级未完成功能：**无**（17 功能全 passing，talk-003 管理员话术配置后台已完成）
+- 当前 blocker：无（talk-003 已完成，222 passed + 真实联调通过，待归档）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -649,3 +649,31 @@
   - 占位符注册表是代码维护的，加新变量需改代码（MVP 变量集已覆盖主要字段，扩展成本低）
   - 一档一轮一类型唯一约束，不支持同格多模板 A/B（Non-Goal，后续可加 priority 扩展）
 - 下一步最佳动作：运行 `/opsx:apply` 实施 talk-003（按 tasks.md 9 组步骤），实施中同步更新 feature_list.json evidence + claude-progress.md
+
+### Session 026
+
+- 日期：2026-09-28
+- 本轮目标：实施 talk-003 管理员话术配置后台（用 /opsx:apply 走 OpenSpec tasks）
+- 工具：Claude Code + OpenSpec /opsx:apply + 2 个并行 Agent（测试适配）+ Explore Agent（前端结构探索）
+- 已完成（9 组 49 task 全勾选）：
+  - 第1组 模型与迁移：talk_templates 加 template_type/system_prompt/user_prompt 列；Alembic 迁移 a1b2c3d4e5f6（加列+清空旧6条+collection_schedules/tasks scene FIRST→ROUND_1 等映射）
+  - 第2组 scene 改 ROUND_N：SceneEnum 改 ROUND_N 校验；config_service 按 seq 自动生成 ROUND_{seq}；DEFAULT_SCHEDULES 改 ROUND_N
+  - 第3组 占位符注册表：新建 placeholders.py（16 占位符：供应商名称/标的名称/概算金额/历史中标率/账龄段/账龄天数/工程局单位/下属单位/注册省份/轮次等）；renderer 改用 build_values + 渲染后无残留校验；validate_placeholders 校验
+  - 第4组 匹配器二维：matcher.py 重写为 [风险档×scene] 二维精确匹配去 ANY 兜底；recommend.py 适配 + template_type 区分
+  - 第5组 AI 模板化：generator.py build_prompt 读 AI_PROMPT 模板渲染；合规基线 _COMPLIANCE_BASELINE 模块级 + 后台 system prompt 追加非覆盖；is_compliant 永开
+  - 第6组 覆盖度矩阵：新建 coverage.py（compute_coverage + diff_coverage + hint_to_dict 纯函数）；api/config.py update_risk 附加 coverage_hint；schemas/config.py RiskConfigOut 加 coverage_hint
+  - 第7组 后端 API：api/talk.py 新增模板 CRUD（ADMIN）+ 占位符列表 + 覆盖度矩阵 + recommend 适配 has_talk；schemas/talk.py 加 TalkTemplateIn/ManageOut/CoverageMatrixOut/PlaceholderOut
+  - 第8组 前端：新建 TalkConfigPanel.tsx（覆盖度矩阵表格缺口高亮+点击配置+模板编辑抽屉+插入变量Tag/Select）；RiskConfigPanel 适配 ROUND_N+coverage_hint 弹提示；TaskDetailModal 适配 has_talk 空状态；types/api.ts Scene 改 string+RiskConfig 加 coverage_hint+TalkTemplateItem 改字段+新增模板管理类型；api/talk.ts 加 CRUD/覆盖度/占位符
+  - 第9组 测试与验证：seed.py 重写 DEFAULT_TALK_TEMPLATES（ROUND_N 二维版6条）；test_talk.py 33 重写；test_talk_ai/test_risk_config 适配（35 passed）；test_task_generation/test_workbench/test_e2e 适配（52 passed）；新增 test_talk_coverage 12；pytest 全量 222 passed；npm build 通过；真实联调全通
+- 运行过的验证：
+  - pytest -q 全量 → **222 passed**（198→222，无回归）
+  - npm run build → tsc + vite build 通过
+  - alembic upgrade head → talk-003 迁移成功
+  - 真实联调（/e/tmp/verify_talk003_e2e.py，dev.db+uvicorn 8123）：覆盖度矩阵5格missing_count=0 + 占位符16个含标的名称 + 推荐话术has_talk=True内容渲染含供应商/标的名称 + 创建AI_PROMPT模板201 + 非法占位符400 + 改风险档3→4轮coverage_hint added_rounds=['ROUND_4'] missing_cells=1 ✓
+  - OpenSpec 4 artifacts done, 49/49 tasks done
+- 已知风险或未解决问题：
+  - 占位符注册表是代码维护的（placeholders.py），加新变量需改代码（MVP 16 个已覆盖主要字段，扩展成本低）
+  - 一档一轮一类型唯一约束，不支持同格多模板 A/B（Non-Goal，后续可加 priority 扩展）
+  - 无 AI_PROMPT 模板时降级内置默认 prompt（保证 AI 链路不断），但后台会标出该格 AI 缺口
+  - 前端 axios 默认 10s 超时对耗时操作需逐个设长超时（沿用历史记录）
+- 下一步最佳动作：talk-003 已完整收尾。可 /opsx:archive 归档；后续可选：真实 LLM 调通体验、PG 迁移、非功能测试、真实业务 CSV 灌入验证

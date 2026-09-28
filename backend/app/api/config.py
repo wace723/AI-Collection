@@ -35,11 +35,12 @@ from app.services.talk_engine.ai_config_service import (
     mask_api_key,
     update_ai_config,
 )
+from app.services.talk_engine.coverage import diff_coverage, hint_to_dict
 
 router = APIRouter()
 
 
-def _to_out(snap: ConfigSnapshot) -> RiskConfigOut:
+def _to_out(snap: ConfigSnapshot, coverage_hint: dict | None = None) -> RiskConfigOut:
     """ConfigSnapshot → RiskConfigOut（不可变转换，不 mutate ORM 实例）。"""
     cfg = snap.config
     return RiskConfigOut(
@@ -61,6 +62,7 @@ def _to_out(snap: ConfigSnapshot) -> RiskConfigOut:
             }
             for s in snap.schedules
         ],
+        coverage_hint=coverage_hint,
     )
 
 
@@ -85,9 +87,15 @@ def update_risk(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("ADMIN")),
 ) -> APIResponse[RiskConfigOut]:
-    """更新阈值+催收时点，生成新版本（仅 ADMIN）。"""
-    snap = update_config(db, payload, created_by=current_user.id)
-    return APIResponse(data=_to_out(snap))
+    """更新阈值+催收时点，生成新版本（仅 ADMIN）。
+
+    talk-003：保存后附加 coverage_hint（话术覆盖度提示，不阻断保存）。
+    """
+    old_snap = get_current_config(db)  # 保存前快照
+    new_snap = update_config(db, payload, created_by=current_user.id)
+    hint = diff_coverage(db, old_snap, new_snap)
+    coverage_hint = hint_to_dict(hint) if hint.has_hint else None
+    return APIResponse(data=_to_out(new_snap, coverage_hint=coverage_hint))
 
 
 @router.get("/risk/history", response_model=APIResponse[list[RiskConfigOut]])

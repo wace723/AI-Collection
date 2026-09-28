@@ -45,13 +45,16 @@ def _auth_headers(client, username="admin") -> dict[str, str]:
 
 
 def _default_payload(high=70.0, medium=30.0) -> RiskConfigUpdateIn:
-    """构造默认 schedules 的更新 payload。"""
+    """构造默认 schedules 的更新 payload。
+
+    talk-003：scene 改为 ROUND_N 格式（由 seq 自动生成，传值须匹配 ROUND_N）。
+    """
     schedules = [
-        ScheduleIn(risk_tier="HIGH", day_offset=7, scene="FIRST", seq=1),
-        ScheduleIn(risk_tier="HIGH", day_offset=15, scene="SECOND", seq=2),
-        ScheduleIn(risk_tier="HIGH", day_offset=30, scene="THIRD", seq=3),
-        ScheduleIn(risk_tier="MEDIUM", day_offset=30, scene="FIRST", seq=1),
-        ScheduleIn(risk_tier="LOW", day_offset=90, scene="FIRST", seq=1),
+        ScheduleIn(risk_tier="HIGH", day_offset=7, scene="ROUND_1", seq=1),
+        ScheduleIn(risk_tier="HIGH", day_offset=15, scene="ROUND_2", seq=2),
+        ScheduleIn(risk_tier="HIGH", day_offset=30, scene="ROUND_3", seq=3),
+        ScheduleIn(risk_tier="MEDIUM", day_offset=30, scene="ROUND_1", seq=1),
+        ScheduleIn(risk_tier="LOW", day_offset=90, scene="ROUND_1", seq=1),
     ]
     return RiskConfigUpdateIn(
         high_threshold=high, medium_threshold=medium, schedules=schedules
@@ -108,11 +111,11 @@ def test_default_config_values(client, seed_users, db_session):
         (s["risk_tier"], s["day_offset"], s["scene"], s["seq"])
         for s in sched_sorted
     ] == [
-        ("HIGH", 7, "FIRST", 1),
-        ("HIGH", 15, "SECOND", 2),
-        ("HIGH", 30, "THIRD", 3),
-        ("MEDIUM", 30, "FIRST", 1),
-        ("LOW", 90, "FIRST", 1),
+        ("HIGH", 7, "ROUND_1", 1),
+        ("HIGH", 15, "ROUND_2", 2),
+        ("HIGH", 30, "ROUND_3", 3),
+        ("MEDIUM", 30, "ROUND_1", 1),
+        ("LOW", 90, "ROUND_1", 1),
     ]
 
 
@@ -373,11 +376,11 @@ def _default_payload_dict(high=70.0, medium=30.0) -> dict:
         "high_threshold": high,
         "medium_threshold": medium,
         "schedules": [
-            {"risk_tier": "HIGH", "day_offset": 7, "scene": "FIRST", "seq": 1},
-            {"risk_tier": "HIGH", "day_offset": 15, "scene": "SECOND", "seq": 2},
-            {"risk_tier": "HIGH", "day_offset": 30, "scene": "THIRD", "seq": 3},
-            {"risk_tier": "MEDIUM", "day_offset": 30, "scene": "FIRST", "seq": 1},
-            {"risk_tier": "LOW", "day_offset": 90, "scene": "FIRST", "seq": 1},
+            {"risk_tier": "HIGH", "day_offset": 7, "scene": "ROUND_1", "seq": 1},
+            {"risk_tier": "HIGH", "day_offset": 15, "scene": "ROUND_2", "seq": 2},
+            {"risk_tier": "HIGH", "day_offset": 30, "scene": "ROUND_3", "seq": 3},
+            {"risk_tier": "MEDIUM", "day_offset": 30, "scene": "ROUND_1", "seq": 1},
+            {"risk_tier": "LOW", "day_offset": 90, "scene": "ROUND_1", "seq": 1},
         ],
     }
 

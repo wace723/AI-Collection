@@ -92,8 +92,8 @@ export interface RecalcRiskSummary {
 /** 风险档枚举 */
 export type RiskTier = 'HIGH' | 'MEDIUM' | 'LOW'
 
-/** 催收场景枚举 */
-export type Scene = 'FIRST' | 'SECOND' | 'THIRD' | 'DISPUTE' | 'PROMISE'
+/** 催收场景（talk-003：统一 ROUND_N，N 为该档 schedules seq，支持任意轮次） */
+export type Scene = string
 
 /** 催收时点配置 */
 export interface CollectionSchedule {
@@ -104,7 +104,29 @@ export interface CollectionSchedule {
   is_active: boolean
 }
 
-/** 风险档配置（含关联催收时点） */
+/** 覆盖度提示格子（话术覆盖矩阵一格） */
+export interface CoverageCell {
+  risk_tier: RiskTier
+  scene: Scene
+  day_offset: number
+  fixed_configured: boolean
+  ai_prompt_configured: boolean
+}
+
+/** 覆盖度矩阵 */
+export interface CoverageMatrix {
+  cells: CoverageCell[]
+  missing_count: number
+}
+
+/** 风险档配置变更的话术覆盖提示 */
+export interface CoverageHint {
+  added_rounds: { risk_tier: RiskTier; scene: Scene }[]
+  deleted_rounds: { risk_tier: RiskTier; scene: Scene }[]
+  missing_cells: CoverageCell[]
+}
+
+/** 风险档配置（含关联催收时点，talk-003 加 coverage_hint） */
 export interface RiskConfig {
   id: number
   version: number
@@ -115,6 +137,7 @@ export interface RiskConfig {
   created_at: string
   updated_at: string
   schedules: CollectionSchedule[]
+  coverage_hint?: CoverageHint | null
 }
 
 /** 风险档配置更新输入 */
@@ -274,23 +297,58 @@ export interface BatchStatusOut {
 }
 
 /** 推荐话术项（content 已渲染） */
+/** 推荐话术项（talk-003：二维匹配，去 score，加 template_type） */
 export interface TalkTemplateItem {
   template_id: number
   name: string
   risk_tier: string
-  age_bucket: string
   scene: string
-  user_feature_tag: string | null
+  template_type: string
   content: string
-  score: number
 }
 
-/** 话术推荐响应 */
+/** 话术推荐响应（talk-003：加 has_talk，未配返回空 + has_talk=false） */
 export interface TalkRecommend {
   task_id: number
-  age_bucket: string
-  user_tag: string | null
+  has_talk: boolean
   templates: TalkTemplateItem[]
+}
+
+/** 话术模板类型 */
+export type TalkTemplateType = 'FIXED' | 'AI_PROMPT'
+
+/** 话术模板管理输出（talk-003 管理后台 CRUD） */
+export interface TalkTemplateManage {
+  id: number
+  name: string
+  risk_tier: RiskTier
+  scene: Scene
+  age_bucket: string | null
+  user_feature_tag: string | null
+  template_type: TalkTemplateType
+  content: string | null
+  system_prompt: string | null
+  user_prompt: string | null
+  is_active: boolean
+}
+
+/** 话术模板创建/更新入参 */
+export interface TalkTemplateInput {
+  name: string
+  risk_tier: RiskTier
+  scene: Scene
+  template_type: TalkTemplateType
+  content?: string | null
+  system_prompt?: string | null
+  user_prompt?: string | null
+  is_active: boolean
+}
+
+/** 可用占位符（前端「插入变量」按钮） */
+export interface Placeholder {
+  key: string
+  description: string
+  group: string
 }
 
 /** AI 话术配置（api_key 脱敏） */

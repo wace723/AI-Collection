@@ -131,7 +131,7 @@ def test_no_need_advances_to_first_round(db_session, seed_risk_config):
     assert len(tasks) == 1
     assert (tasks[0].day_offset, tasks[0].scene, tasks[0].risk_tier) == (
         7,
-        "FIRST",
+        "ROUND_1",
         "HIGH",
     )
     assert tasks[0].status == "PENDING_ASSIGN"
@@ -249,7 +249,7 @@ def test_db_unique_constraint_blocks_duplicate(db_session, seed_risk_config):
             order_id=order.id,
             service_fee_order_no="TC05_DUP",
             risk_tier="HIGH",
-            scene="FIRST",
+            scene="ROUND_1",
             day_offset=7,
             due_date=date(2026, 9, 8),
             status="PENDING_ASSIGN",
@@ -261,7 +261,7 @@ def test_db_unique_constraint_blocks_duplicate(db_session, seed_risk_config):
             order_id=order.id,
             service_fee_order_no="TC05_DUP",
             risk_tier="HIGH",
-            scene="FIRST",
+            scene="ROUND_1",
             day_offset=7,
             due_date=date(2026, 9, 8),
             status="PENDING_ASSIGN",
@@ -304,7 +304,7 @@ def test_cross_interval_delete_old_generate_new(db_session, seed_risk_config):
     tasks_after_second = _tasks(db_session)
     assert len(tasks_after_second) == 1
     assert tasks_after_second[0].day_offset == 15
-    assert tasks_after_second[0].scene == "SECOND"
+    assert tasks_after_second[0].scene == "ROUND_2"
     assert tasks_after_second[0].status == "PENDING_ASSIGN"
     assert tasks_after_second[0].batch_id == "2026-09-16"
 
@@ -400,7 +400,7 @@ def test_single_active_task_invariant(db_session, seed_risk_config):
     tasks = _tasks(db_session)
     assert len(tasks) == 1
     assert tasks[0].day_offset == 30
-    assert tasks[0].scene == "THIRD"
+    assert tasks[0].scene == "ROUND_3"
 
 
 # ── 通用多轮适配（HIGH 3 轮 [7,15,30]）────────────────────────────
@@ -421,11 +421,11 @@ def test_high_multi_round_current_offset_15(db_session, seed_risk_config):
     tasks = _tasks(db_session)
     assert len(tasks) == 1
     assert tasks[0].day_offset == 15
-    assert tasks[0].scene == "SECOND"
+    assert tasks[0].scene == "ROUND_2"
 
 
 def test_high_multi_round_current_offset_30(db_session, seed_risk_config):
-    """HIGH 3 轮 [7,15,30]，age=35 → 当前区间 30（THIRD）。
+    """HIGH 3 轮 [7,15,30]，age=35 → 当前区间 30（ROUND_3）。
 
     HIGH win=08-15，today=09-19（age=35）：win+30=09-14<=09-19 → current_offset=30。
     """
@@ -438,7 +438,7 @@ def test_high_multi_round_current_offset_30(db_session, seed_risk_config):
     tasks = _tasks(db_session)
     assert len(tasks) == 1
     assert tasks[0].day_offset == 30
-    assert tasks[0].scene == "THIRD"
+    assert tasks[0].scene == "ROUND_3"
 
 
 def test_high_age_exactly_7(db_session, seed_risk_config):
@@ -494,7 +494,7 @@ def test_medium_advances_on_30th_day(db_session, seed_risk_config):
 
     assert result.generated == 1
     tasks = _tasks(db_session)
-    assert (tasks[0].day_offset, tasks[0].scene) == (30, "FIRST")
+    assert (tasks[0].day_offset, tasks[0].scene) == (30, "ROUND_1")
     order = _order(db_session, "TC15_MED")
     assert order.collection_state == PENDING_COLLECTION
 
@@ -554,7 +554,7 @@ def test_collected_cross_interval_generates_new(db_session, seed_risk_config):
             order_id=order.id,
             service_fee_order_no="TC18_COLL",
             risk_tier="HIGH",
-            scene="FIRST",
+            scene="ROUND_1",
             day_offset=7,
             due_date=date(2026, 9, 8),
             status="DONE",
@@ -590,7 +590,7 @@ def test_collected_same_interval_idempotent(db_session, seed_risk_config):
             order_id=order.id,
             service_fee_order_no="TC19_COLL_IDEM",
             risk_tier="HIGH",
-            scene="FIRST",
+            scene="ROUND_1",
             day_offset=7,
             due_date=date(2026, 9, 8),
             status="DONE",

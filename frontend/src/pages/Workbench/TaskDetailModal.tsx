@@ -159,8 +159,8 @@ function TemplateTalkCard({ taskId }: { taskId: number }) {
   }, [taskId])
 
   return (
-    <Card title="模板话术" size="small" extra={talk ? <Text type="secondary">账龄 {talk.age_bucket}</Text> : null}>
-      {loading ? <Spin /> : talk && talk.templates.length > 0 ? (
+    <Card title="模板话术" size="small">
+      {loading ? <Spin /> : talk && talk.has_talk && talk.templates.length > 0 ? (
         <>
           <Paragraph style={{ marginBottom: 8 }}>{talk.templates[0].content}</Paragraph>
           {talk.templates.length > 1 && (
@@ -176,7 +176,7 @@ function TemplateTalkCard({ taskId }: { taskId: number }) {
             />
           )}
         </>
-      ) : <Text type="secondary">暂无匹配模板</Text>}
+      ) : <Text type="secondary">该轮次未配话术，请管理员在话术配置后台补充</Text>}
     </Card>
   )
 }

@@ -24,56 +24,80 @@ DEFAULT_USERS = [
 
 DEFAULT_PASSWORD = "admin123"
 
-# 默认话术模板（talk-001）。维度：[风险档 × 账龄段 × 场景 × 用户特征]
-# user_feature_tag=None 表示该维度通配（ANY）。
+# 默认话术模板（talk-003 二维匹配 [风险档 × 轮次]）。
+# scene=ROUND_N（由 risk_config 的 schedules seq 自动生成）。
+# template_type=FIXED（最终文本，content 含占位符）；AI_PROMPT 示例见末尾。
+# 占位符经 validate_placeholders 校验，渲染见 renderer。
 DEFAULT_TALK_TEMPLATES = [
+    # ── HIGH 档 3 轮 FIXED ──
     {
-        "name": "HIGH×8_15×SECOND×MEMBER",
-        "risk_tier": "HIGH",
-        "age_bucket": "8_15",
-        "scene": "SECOND",
-        "user_feature_tag": "MEMBER",
-        "content": "尊敬的{供应商名称}（会员），您订单{service_fee_order_no}的平台使用费已逾期，请尽快登录平台完成缴费，避免影响后续投标资格与会员权益。",
-    },
-    {
-        "name": "HIGH×ANY×SECOND×ANY",
+        "name": "HIGH×ROUND_1×FIXED",
         "risk_tier": "HIGH",
         "age_bucket": "ANY",
-        "scene": "SECOND",
+        "scene": "ROUND_1",
         "user_feature_tag": None,
-        "content": "{供应商名称}您好，订单{service_fee_order_no}的平台使用费仍未缴纳，请尽快处理，避免影响后续业务。",
+        "template_type": "FIXED",
+        "content": "尊敬的{供应商名称}，您平台使用费订单{订单号}（标的：{标的名称}）已到应缴日{应催日}，请尽快登录平台完成缴费，避免影响后续投标资格。",
+        "system_prompt": None,
+        "user_prompt": None,
     },
     {
-        "name": "HIGH×0_7×FIRST×ANY",
+        "name": "HIGH×ROUND_2×FIXED",
         "risk_tier": "HIGH",
-        "age_bucket": "0_7",
-        "scene": "FIRST",
+        "age_bucket": "ANY",
+        "scene": "ROUND_2",
         "user_feature_tag": None,
-        "content": "{供应商名称}，您的平台使用费订单{service_fee_order_no}已到应缴日{应催日}，请及时缴费。",
+        "template_type": "FIXED",
+        "content": "{供应商名称}您好，订单{订单号}的平台使用费仍未缴纳（{账龄段}），请尽快处理，避免影响后续业务。",
+        "system_prompt": None,
+        "user_prompt": None,
     },
     {
-        "name": "MEDIUM×31_90×FIRST×ANY",
+        "name": "HIGH×ROUND_3×FIXED",
+        "risk_tier": "HIGH",
+        "age_bucket": "ANY",
+        "scene": "ROUND_3",
+        "user_feature_tag": None,
+        "template_type": "FIXED",
+        "content": "{供应商名称}，订单{订单号}平台使用费已逾期较久（高风险档，第3轮催收），请尽快缴纳，否则将影响信用记录。",
+        "system_prompt": None,
+        "user_prompt": None,
+    },
+    # ── MEDIUM 档 1 轮 FIXED ──
+    {
+        "name": "MEDIUM×ROUND_1×FIXED",
         "risk_tier": "MEDIUM",
-        "age_bucket": "31_90",
-        "scene": "FIRST",
-        "user_feature_tag": None,
-        "content": "{供应商名称}，订单{service_fee_order_no}平台使用费已逾期较久（{风险档}档），请尽快缴纳。",
-    },
-    {
-        "name": "LOW×90_PLUS×FIRST×ANY",
-        "risk_tier": "LOW",
-        "age_bucket": "90_PLUS",
-        "scene": "FIRST",
-        "user_feature_tag": None,
-        "content": "{供应商名称}，订单{service_fee_order_no}平台使用费长期未缴，请尽快处理以免影响信用记录。",
-    },
-    {
-        "name": "ANY×ANY×ANY×ANY",
-        "risk_tier": "ANY",
         "age_bucket": "ANY",
-        "scene": "ANY",
+        "scene": "ROUND_1",
         "user_feature_tag": None,
-        "content": "{供应商名称}您好，订单{service_fee_order_no}的平台使用费待缴纳，请尽快登录平台处理。",
+        "template_type": "FIXED",
+        "content": "{供应商名称}，订单{订单号}（标的：{标的名称}）平台使用费已逾期，请尽快缴纳。",
+        "system_prompt": None,
+        "user_prompt": None,
+    },
+    # ── LOW 档 1 轮 FIXED ──
+    {
+        "name": "LOW×ROUND_1×FIXED",
+        "risk_tier": "LOW",
+        "age_bucket": "ANY",
+        "scene": "ROUND_1",
+        "user_feature_tag": None,
+        "template_type": "FIXED",
+        "content": "{供应商名称}，订单{订单号}平台使用费长期未缴，请尽快处理以免影响信用记录。",
+        "system_prompt": None,
+        "user_prompt": None,
+    },
+    # ── HIGH 档第 1 轮 AI_PROMPT 示例 ──
+    {
+        "name": "HIGH×ROUND_1×AI_PROMPT",
+        "risk_tier": "HIGH",
+        "age_bucket": "ANY",
+        "scene": "ROUND_1",
+        "user_feature_tag": None,
+        "template_type": "AI_PROMPT",
+        "content": "",
+        "system_prompt": "语气正式但紧迫，强调逾期对投标资格的影响，给出具体缴费指引。",
+        "user_prompt": "请为供应商{供应商名称}生成第1轮催收话术，订单号{订单号}，标的{标的名称}，风险档{风险档}，应催日{应催日}，账龄{账龄天数}天。",
     },
 ]
 
