@@ -1,6 +1,6 @@
 {
   "project": "平台使用费 AI 辅助催收系统",
-  "last_updated": "2026-09-21",
+  "last_updated": "2026-09-28",
   "rules": {
     "single_active_feature": true,
     "passing_requires_evidence": true,
@@ -437,6 +437,27 @@
         "前端 types/api.ts BatchResultOut 改 deleted/skipped；Config Modal 展示「跨区间删旧任务」替代「轮次耗尽终态」"
       ],
       "notes": "OpenSpec change: openspec/changes/single-active-task-interval-model/（proposal+design+specs+tasks 已生成，4/4 artifacts complete）。BREAKING：任务模型从多轮并存改为单活跃任务（一个订单同时一个任务），现有 tasks 表需清空重建。根因：data-004 实施后发现 HIGH 档多轮并存（7/15/30 三个任务）+ 多次跑批触发导致大量 PENDING_ASSIGN 堆积，且催收员看到「只有 HIGH 任务」错觉。Capabilities：task-engine（改）+ import-payment-sync（改）。实施用 /opsx:apply。"
+    },
+    {
+      "id": "talk-003",
+      "priority": 17,
+      "area": "talk_engine",
+      "title": "管理员话术配置后台（固定模板+AI提示词模板，二维匹配+覆盖度矩阵）",
+      "description": "管理员后台对话术模板 CRUD：固定模板（最终文本 content）+ AI 提示词模板（system_prompt+user_prompt）；匹配键从四维 [风险档×账龄段×场景×用户特征] 收敛为二维 [风险档×轮次]，账龄段/用户特征降为话术变量；scene 改 ROUND_N（由 schedules seq 自动生成，支持任意轮次）；占位符统一注册表+保存校验（纳入标的名称等新字段，防渲染残留）；覆盖度矩阵可视化+风险档变更联动提示；AI 合规基线追加不可绕过。",
+      "dependencies": ["talk-001", "talk-002", "risk-002", "task-003"],
+      "status": "in_progress",
+      "verification": [
+        "二维匹配：(风险档×轮次) 精确命中，未配显示空状态不兜底（对应新 talk-config spec）",
+        "scene=ROUND_N：由 schedules seq 自动生成，支持 4 轮及以上（对应 task-engine modified spec）",
+        "占位符校验：合法通过，非法拒绝 400，渲染后无残留花括号",
+        "覆盖度矩阵：按 active risk_config 展开 [档×轮]，缺口高亮可点击配置",
+        "风险档变更联动提示：新增/删除轮次提示复核话术（不阻断保存）",
+        "AI 合规基线：后台 system prompt 追加而非覆盖，is_compliant 永不可关",
+        "模板 CRUD：ADMIN 可增删改查，COLLECTOR/SUPERVISOR 403",
+        "pytest 全量通过 + npm run build 通过 + 真实联调"
+      ],
+      "evidence": [],
+      "notes": "OpenSpec change: openspec/changes/admin-talk-config/（proposal+design+specs+tasks 已生成，4/4 artifacts complete）。BREAKING：①话术匹配键四维→二维 [风险档×轮次]，账龄段/用户特征降为变量；②scene 固定枚举 FIRST/SECOND/THIRD → ROUND_N（seq 驱动，支持任意轮次）；③丢弃现有 6 条默认话术清空重配；④不保留 ANY 兜底，未配显示空状态。Capabilities：talk-config（新）+ task-engine（改 scene 语义）。9 项核心决策（D1~D7 + 兜底严格按格 + 丢数据重配）。实施用 /opsx:apply。"
     }
   ]
 }

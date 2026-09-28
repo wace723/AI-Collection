@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`（或 `./start.sh` 快速启动不跑测试）
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`
-- 当前最高优先级未完成功能：**无**（MVP + supervisor 增强 + 业务流程简化 + data-002/003/004 + task-003 单活跃任务区间模型 全完成）
-- 当前 blocker：无（task-003 已完成，198 passed + 真实联调通过，已归档）
+- 当前最高优先级未完成功能：**talk-003 管理员话术配置后台**（in_progress，OpenSpec change admin-talk-config 已规划 4/4 artifacts，待 /opsx:apply 实施）
+- 当前 blocker：无（talk-003 规划完成，9 项决策全敲定，待实施）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -618,3 +618,34 @@
   - 前端 axios 默认 10s 超时对耗时操作需逐个设长超时（已修 generateTalk/uploadPendingCsv/uploadPaidCsv，后续新耗时操作仍需注意）
   - 测试数据/待支付订单.xlsx 和 .csv 误提交进仓库（待确认是否移除）
 - 下一步最佳动作：16 功能全 passing，无活动 change。可继续：真实联调深化、真实 LLM 调通、PG 迁移、话术模板管理 UI、非功能测试
+
+### Session 025
+
+- 日期：2026-09-24 ~ 2026-09-28
+- 本轮目标：规划 talk-003 管理员话术配置后台，用 OpenSpec 生成方案 + harness 登记追踪
+- 工具：Claude Code + OpenSpec（/opsx:propose）+ superpowers:brainstorming（需求探索）
+- 需求澄清（5 轮 AskUserQuestion，先深度探索「会不会有问题」再决策）：
+  - 先评估「这样设置会不会有问题」：列出 P0/P1/P2 共 9 项问题（联动裂缝/scene 撑不住任意轮/scene 漂移/存储模型/占位符残留/矩阵爆炸/合规绕过/ai_config 边界/版本化）
+  - **决策1 联动方式**：强联动+校验提示（不阻断保存）
+  - **决策2 存储模型**：一张 TalkTemplate 表带 template_type（FIXED/AI_PROMPT）
+  - **决策3 scene 标识**：统一改 ROUND_N（seq 驱动，支持任意轮次）
+  - **决策4 匹配键**：二维 [风险档×轮次]（账龄段/用户特征降为话术变量，不参与匹配）
+  - **决策5 scene 漂移**：话术绑轮次不绑 day_offset，按轮次匹配即可（用户：不一定要在话术里说明已逾期 xx 天）
+  - **决策6 兜底**：不保留 ANY 兜底，严格按格，未配显示「未配话术」
+  - **决策7 现有数据**：丢掉 6 条默认话术，清空重配 + 新种子
+- 已完成：
+  - OpenSpec change `admin-talk-config` 生成 4/4 artifacts：
+    - proposal.md（why + what + 2 capability：talk-config 新/task-engine 改；含 BREAKING 标注）
+    - design.md（7 项决策 D1~D7：二维匹配/ROUND_N/一张表带type/占位符注册表/丢数据重配/覆盖度矩阵联动/合规基线不可绕；含 Risks/Trade-offs）
+    - specs/talk-config/spec.md（7 个新 requirement：二维匹配/两类模板/占位符校验/覆盖度矩阵/联动提示/合规基线/CRUD）
+    - specs/task-engine/spec.md（1 modified「跑批推进」加 scene=ROUND_N 语义 + 1 added「scene 由 seq 自动生成」+ 数据迁移映射）
+    - tasks.md（9 组实现步骤：模型迁移→scene改造→占位符→匹配器→AI模板→覆盖度→API→前端→测试验证）
+  - harness 登记追踪：feature_list.json 新增 `talk-003`（priority 17，in_progress，关联 OpenSpec change，BREAKING 标注），last_updated→2026-09-28
+- 运行过的验证：无代码改动，仅方案生成（openspec status 4/4 artifacts complete）
+- 已知风险或未解决问题：
+  - **BREAKING**：话术匹配键四维→二维，账龄段/用户特征从匹配维度降为变量（talk-001 四维 matcher 重写）
+  - **BREAKING**：scene 固定枚举 FIRST/SECOND/THIRD → ROUND_N，collection_schedules/tasks 数据需迁移映射，talk_templates 清空重配
+  - **BREAKING**：不保留 ANY 兜底，未配话术显示空状态——覆盖度矩阵必须做好，否则催收员裸奔
+  - 占位符注册表是代码维护的，加新变量需改代码（MVP 变量集已覆盖主要字段，扩展成本低）
+  - 一档一轮一类型唯一约束，不支持同格多模板 A/B（Non-Goal，后续可加 priority 扩展）
+- 下一步最佳动作：运行 `/opsx:apply` 实施 talk-003（按 tasks.md 9 组步骤），实施中同步更新 feature_list.json evidence + claude-progress.md
