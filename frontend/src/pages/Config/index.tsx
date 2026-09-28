@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Card, Upload, Alert, Modal, Statistic, Row, Col, Table, message } from 'antd'
+import { Card, Upload, Alert, Modal, Statistic, Row, Col, Table, Tabs, message } from 'antd'
 import { InboxOutlined } from '@ant-design/icons'
 import type { UploadRequestOption } from 'rc-upload/lib/interface'
 import { uploadPendingCsv, uploadPaidCsv } from '../../api/data'
@@ -96,42 +96,70 @@ export default function Config() {
   }
 
   return (
-    <>
-      <Card title="待支付订单导入 — CSV（全量/增量）" style={{ marginBottom: 24 }}>
-        <Dragger
-          accept=".csv"
-          multiple={false}
-          showUploadList={false}
-          customRequest={handlePendingUpload}
-          disabled={pendingLoading}
-        >
-          <p className="ant-upload-drag-icon">
-            <InboxOutlined />
-          </p>
-          <p className="ant-upload-text">点击或拖拽待支付订单 CSV 到此处上传</p>
-          <p className="ant-upload-hint">
-            40 列（含工程局单位/下属单位/风险概率）；导入后自动跑批生成任务
-          </p>
-        </Dragger>
-      </Card>
+    <Card title="配置后台">
+      <Tabs
+        defaultActiveKey="import"
+        items={[
+          {
+            key: 'import',
+            label: '数据导入',
+            children: (
+              <>
+                <Card title="待支付订单导入 — CSV（全量/增量）" style={{ marginBottom: 24 }}>
+                  <Dragger
+                    accept=".csv"
+                    multiple={false}
+                    showUploadList={false}
+                    customRequest={handlePendingUpload}
+                    disabled={pendingLoading}
+                  >
+                    <p className="ant-upload-drag-icon">
+                      <InboxOutlined />
+                    </p>
+                    <p className="ant-upload-text">点击或拖拽待支付订单 CSV 到此处上传</p>
+                    <p className="ant-upload-hint">
+                      40 列（含工程局单位/下属单位/风险概率）；导入后自动跑批生成任务
+                    </p>
+                  </Dragger>
+                </Card>
 
-      <Card title="已支付订单导入 — CSV（回写支付状态）" style={{ marginBottom: 24 }}>
-        <Dragger
-          accept=".csv"
-          multiple={false}
-          showUploadList={false}
-          customRequest={handlePaidUpload}
-          disabled={paidLoading}
-        >
-          <p className="ant-upload-drag-icon">
-            <InboxOutlined />
-          </p>
-          <p className="ant-upload-text">点击或拖拽已支付订单 CSV 到此处上传</p>
-          <p className="ant-upload-hint">
-            40 列；按服务费订单号匹配待支付订单，回写支付状态+终态停催；无匹配跳过
-          </p>
-        </Dragger>
-      </Card>
+                <Card title="已支付订单导入 — CSV（回写支付状态）">
+                  <Dragger
+                    accept=".csv"
+                    multiple={false}
+                    showUploadList={false}
+                    customRequest={handlePaidUpload}
+                    disabled={paidLoading}
+                  >
+                    <p className="ant-upload-drag-icon">
+                      <InboxOutlined />
+                    </p>
+                    <p className="ant-upload-text">点击或拖拽已支付订单 CSV 到此处上传</p>
+                    <p className="ant-upload-hint">
+                      40 列；按服务费订单号匹配待支付订单，回写支付状态+终态停催；无匹配跳过
+                    </p>
+                  </Dragger>
+                </Card>
+              </>
+            ),
+          },
+          {
+            key: 'risk',
+            label: '风险档配置',
+            children: <RiskConfigPanel />,
+          },
+          {
+            key: 'talk',
+            label: '话术配置',
+            children: (
+              <>
+                <TalkConfigPanel />
+                <AIConfigPanel />
+              </>
+            ),
+          },
+        ]}
+      />
 
       {/* 待支付导入结果 Modal */}
       <Modal
@@ -244,12 +272,6 @@ export default function Config() {
           </>
         )}
       </Modal>
-
-      <RiskConfigPanel />
-
-      <TalkConfigPanel />
-
-      <AIConfigPanel />
-    </>
+    </Card>
   )
 }
