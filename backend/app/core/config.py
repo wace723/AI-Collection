@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     # LLM（talk-002 实现，OpenAI 兼容协议，不绑死供应商）
     LLM_PROVIDER: str = "mock"  # mock | openai_compatible
     LLM_API_KEY: str | None = None
-    LLM_BASE_URL: str | None = None  # 如 https://tianqu.yzw.cn/v1
+    LLM_BASE_URL: str | None = None  # 如 https://your-llm-endpoint/v1
     LLM_MODEL: str | None = None  # 如 glm-5.2
     LLM_TIMEOUT: float = 30.0  # LLM 调用超时（秒，关闭 thinking 后约 2s，留余量）
     # extra_body（透传给 OpenAI SDK 的非标准参数，JSON 字符串）

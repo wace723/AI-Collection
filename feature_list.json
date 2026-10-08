@@ -268,7 +268,7 @@
         "AI 配置 API：GET/PUT /api/config/ai（SUPERVISOR/ADMIN），api_key 脱敏返回，空 key 保留旧值；DB 优先、.env 回退（get_effective_ai_config）",
         "LLMProvider 抽象（MockLLMProvider + OpenAICompatibleProvider）+ generator（生成→合规校验→写 AIConversation→失败降级模板）；纵深安全=system prompt 约束 + 超时 + 输出合规校验第二道防线",
         "前端 AIConfigPanel（provider/apikey/baseurl/model/enabled）+ Workbench 详情 AI 生成按钮 + 反馈；npm run build ✓",
-        "真实 LLM 路径代码就绪且配置已注入（key/base/model 从 .env→ai_config DB），本机调 https://tianqu.yzw.cn/v1 ReadTimeout（30s/60s），降级模板正常工作；TC-06 真实调通待用户确认 base_url 可达性（疑似内部服务需内网）"
+        "真实 LLM 路径代码就绪且配置已注入（key/base/model 从 .env→ai_config DB），本机调 https://your-llm-endpoint/v1 ReadTimeout（30s/60s），降级模板正常工作；TC-06 真实调通待用户确认 base_url 可达性（疑似内部服务需内网）"
       ],
       "notes": "控制权=代码为主 LLM 单点辅助（非工具驱动自主循环，按 agent-app-builder 技能裁剪掉工具架构/WS/对话历史裁剪）。纵深安全多道防线：system prompt 合规约束 + LLM_TIMEOUT + 输出 is_compliant 校验（威胁/辱骂/虚假承诺关键词）+ 降级模板 + AIConversation 审计。api_key 明文存 DB（MVP，生产应加密）。参考 agent-app-builder 技能方法论。"
     },

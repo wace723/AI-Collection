@@ -310,13 +310,13 @@
 - 运行过的验证：
   - `pytest tests/test_talk_ai.py -q` → 18 passed
   - `pytest -q` 全量 → 137 passed（无回归）
-  - 真实 LLM E2E：.env 配置已注入 ai_config DB（key=tqsk-***, base=https://tianqu.yzw.cn/v1, model=glm-5.2, provider=openai_compatible, enabled=True）；调 tianqu.yzw.cn ReadTimeout（30s/60s）→ 降级模板正常（设计约束#2 生效）
+  - 真实 LLM E2E：.env 配置已注入 ai_config DB（key=***, base=https://your-llm-endpoint/v1, model=glm-5.2, provider=openai_compatible, enabled=True）；调 LLM ReadTimeout（30s/60s）→ 降级模板正常（设计约束#2 生效）
   - `npm run build` → ✓
 - 已记录证据：见 feature_list.json talk-002.evidence
 - 提交记录：`feat: talk-002 ai talk generation + frontend config (llm provider + fallback + compliance)`
 - 更新过的文件或工件：core/config.py（BACKEND_DIR 修复 + LLM_BASE_URL/MODEL/TIMEOUT）、models/ai_config.py、models/__init__.py、alembic/versions/d5e3a1b2c4f6（新）、services/talk_engine/ai_config_service.py、llm_provider.py、generator.py、__init__.py、api/config.py、api/talk.py、schemas/config.py、schemas/talk.py、seed.py、tests/test_talk_ai.py、frontend AIConfigPanel/config.ts/talk.ts/Workbench、feature_list.json、claude-progress.md、session-handoff.md
 - 已知风险或未解决问题：
-  - 真实 LLM 调 tianqu.yzw.cn 超时（疑似内部服务需内网/VPN，或响应慢）→ 降级模板工作；用户需确认 base_url 可达性
+  - 真实 LLM 调 your-llm-endpoint 超时（疑似内部服务需内网/VPN，或响应慢）→ 降级模板工作；用户需确认 base_url 可达性
   - api_key 明文存 DB（MVP，生产应加密）
   - 合规校验为关键词法（可能误杀/漏判），生产可换分类模型
   - TC-06 真实调通待网络环境确认
@@ -372,7 +372,7 @@
   - TC-E2E-02 用 service 层 run_batch(db,today=...) 注入时间推进（API 不接受 today 注入，时点控制必须经 service 层）
   - AI 话术在内存测试用 db 直接插 ai_config(mock,enabled=True) 避免触网；真实联调用 PUT /api/config/ai 设 mock
   - dev.db 现有多笔测试回填 PAID（本地数据，不影响仓库）
-  - 真实 LLM 调 tianqu.yzw.cn 超时仍待用户确认 base_url 可达性（非 MVP 阻塞项）
+  - 真实 LLM 调 your-llm-endpoint 超时仍待用户确认 base_url 可达性（非 MVP 阻塞项）
 - 下一步最佳动作：**MVP 验收完成**。后续可考虑：真实 LLM 调通（用户确认 base_url）、PG 时区统一、前端 code-split 优化主 chunk、真实算法替换 MockRiskProvider（需时间切割防泄漏）、主管手动改派（F-TASK-04 P1）
 
 ### Session 014

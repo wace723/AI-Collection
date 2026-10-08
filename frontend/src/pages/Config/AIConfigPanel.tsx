@@ -108,7 +108,7 @@ export default function AIConfigPanel() {
             }
           />
         </Form.Item>
-        <Form.Item label="Base URL" name="base_url" tooltip="如 https://tianqu.yzw.cn/v1">
+        <Form.Item label="Base URL" name="base_url" tooltip="如 https://your-llm-endpoint/v1">
           <Input placeholder="OpenAI 兼容接口地址" />
         </Form.Item>
         <Form.Item label="Model" name="model" tooltip="如 glm-5.2 / deepseek-chat">

@@ -309,7 +309,7 @@ def settings_provider() -> str:
 def test_mask_api_key():
     assert mask_api_key(None) is None
     assert mask_api_key("ab") == "***"
-    assert mask_api_key("tqsk-63bce0849980") == "tqsk***9980"
+    assert mask_api_key("tqsk-abcdef123456") == "tqsk***3456"
 
 
 # ── AI 配置 API ───────────────────────────────────────────────────
