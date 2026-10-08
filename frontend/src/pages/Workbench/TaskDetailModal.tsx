@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Button, Card, Collapse, Descriptions, Modal, Space, Spin, Tag, Typography, message } from 'antd'
+import ReactMarkdown from 'react-markdown'
 import { getRecommendTalks, generateTalk, sendFeedback } from '../../api/talk'
 import type { GenerateTalk, TaskDetail, TalkRecommend } from '../../types/api'
 
@@ -47,6 +48,26 @@ export default function TaskDetailModal({ open, detail, loading, onClose, onResu
           <RightPanel detail={detail} onResult={onResult} />
         </div>
       ) : null}
+      <style>{`
+        .ai-talk-markdown { line-height: 1.7; font-size: 14px; }
+        .ai-talk-markdown p { margin: 0 0 8px 0; }
+        .ai-talk-markdown p:last-child { margin-bottom: 0; }
+        .ai-talk-markdown h1, .ai-talk-markdown h2, .ai-talk-markdown h3,
+        .ai-talk-markdown h4, .ai-talk-markdown h5, .ai-talk-markdown h6 {
+          margin: 8px 0 4px 0; font-weight: 600; line-height: 1.4;
+        }
+        .ai-talk-markdown ul, .ai-talk-markdown ol { margin: 0 0 8px 0; padding-left: 20px; }
+        .ai-talk-markdown li { margin: 2px 0; }
+        .ai-talk-markdown strong { font-weight: 600; }
+        .ai-talk-markdown code {
+          background: #f5f5f5; padding: 1px 4px; border-radius: 3px;
+          font-family: monospace; font-size: 13px;
+        }
+        .ai-talk-markdown blockquote {
+          margin: 4px 0; padding: 4px 12px; border-left: 3px solid #d9d9d9;
+          color: #666; background: #fafafa;
+        }
+      `}</style>
     </Modal>
   )
 }
@@ -231,7 +252,11 @@ function AiTalkCard({ taskId }: { taskId: number }) {
               </>
             )}
           </Space>
-          <Paragraph style={{ marginBottom: 0 }}>{aiTalk.content || '（无内容）'}</Paragraph>
+          <div className="ai-talk-markdown">
+            <ReactMarkdown>
+              {aiTalk.content || '（无内容）'}
+            </ReactMarkdown>
+          </div>
         </>
       ) : (
         <Text type="secondary">点击「生成」获取 AI 话术</Text>
