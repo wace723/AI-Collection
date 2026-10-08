@@ -5,8 +5,8 @@
 - 仓库根目录：`e:/my-projects/平台使用费ai辅助催收系统`
 - 标准启动路径：`./init.sh`（或 `./start.sh` 快速启动不跑测试）
 - 标准验证路径：后端 `pytest` + 前端 `npm run build`
-- 当前最高优先级未完成功能：**无**（17 功能全 passing，talk-003 管理员话术配置后台已完成）
-- 当前 blocker：无（talk-003 已完成，222 passed + 真实联调通过，待归档）
+- 当前最高优先级未完成功能：**无**（17 功能全 passing，talk-003 管理员话术配置后台已完成并归档 + 后续 UI 优化：Tab 布局/占位符扩展到 44/AI 话术 markdown 渲染）
+- 当前 blocker：无（talk-003 已归档，后续 UI 优化已完成验证）
 - 双工具：本仓库现由 Claude Code（路由层 `CLAUDE.md`）与 CodeBuddy（路由层 `CODEBUDDY.md`）共用同一套 docs/ 与状态文件开发
 
 ## 已完成的基础工件
@@ -677,3 +677,25 @@
   - 无 AI_PROMPT 模板时降级内置默认 prompt（保证 AI 链路不断），但后台会标出该格 AI 缺口
   - 前端 axios 默认 10s 超时对耗时操作需逐个设长超时（沿用历史记录）
 - 下一步最佳动作：talk-003 已完整收尾。可 /opsx:archive 归档；后续可选：真实 LLM 调通体验、PG 迁移、非功能测试、真实业务 CSV 灌入验证
+
+### Session 027
+
+- 日期：2026-09-28
+- 本轮目标：talk-003 归档 + 后续话术配置 UI 优化（Tab 布局/占位符扩展/AI 话术 markdown）
+- 工具：Claude Code
+- 已完成：
+  - **归档 admin-talk-config**：openspec/changes/admin-talk-config → archive/2026-09-28-admin-talk-config；同步主 specs（新建 openspec/specs/talk-config/spec.md 7 requirement，task-engine 主 spec 合并 modified「跑批推进」加 scene=ROUND_N 语义 + added「scene 由 seq 自动生成」）
+  - **Config 页 Tab 布局**：CSV 上传/RiskConfigPanel/AIConfigPanel/TalkConfigPanel 平铺改为 3 个 Tab（数据导入/风险档配置/话术配置），括号内内容不放 Tab 名
+  - **话术编辑 UI 调整**：右侧 Drawer → 居中 Modal；固定模板话术 + AI 提示词同时展示（Divider 分隔，不切换）；模板名称/风险档/轮次不可编辑（按点击格子锁定，名称自动生成 `{档}×{轮}`）；占位符变量全部直接平铺展示（去"更多"下拉，去 maxHeight 限制）；去掉"启用"字段
+  - **占位符扩展到全部特征字段（16→44）**：placeholders.py 注册表覆盖 Order+OrderFeature 全部业务字段，分 7 组（基础5/标的7/催收7/供应商归属5/缴费历史3/活跃度8/资质标签9）；renderer.build_values 覆盖全部 44 key；新增：供应商编号/业务编号/招标方式/采购方式/中标品类/合同类型/订单生成日期/风险概率/注册地区/历史平台使用费订单数/上次缴费历时/历史缴费平均历时/服务市场历史支付金额/历史报名次数/历史投标次数/历史中标次数/近90天活跃度/首次中标间隔/中标前购买会员次数/注册资金/各类间隔天数/供应商品类/标签表中标率/优质评级/合作单位数/累计履约项目数；金额/比率友好格式化
+  - **AI 话术 markdown 渲染**：安装 react-markdown，TaskDetailModal 的 AiTalkCard 内容从 `<Paragraph>` 纯文本改为 `<ReactMarkdown>` 渲染；加 .ai-talk-markdown 排版样式（标题/列表/加粗/代码/引用块）；react-markdown 默认不渲染 raw HTML 防 XSS
+- 运行过的验证：
+  - 占位符扩展验证：available_placeholders() 44 个 + build_values 覆盖全部 44 key 无遗漏 + 金额/比率格式化正确
+  - pytest tests/test_talk.py tests/test_talk_coverage.py → 45 passed（占位符扩展无回归）
+  - npm run build → 通过（Tab 布局 + 居中 Modal + 变量全展示 + markdown 渲染）
+  - 真实联调（dev.db + uvicorn 8123）：覆盖度矩阵5格 + 占位符44个 + 推荐话术has_talk=True + 模板CRUD + 非法占位符400 + 改风险档coverage_hint ✓（Session 026 已验证，本轮 UI 优化后前端 build 通过）
+- 已知风险或未解决问题：
+  - docs/ 话术章节仍为旧描述（四维匹配/7 占位符/FIRST/SECOND/THIRD），需后续同步 talk-003 BREAKING 改造（PRD F-TALK-01/07、架构 §3.2.8/§4.3、测试 TC-TALK-01~04）——本轮未改 docs，标注待办
+  - 占位符注册表是代码维护的（placeholders.py），加新变量需改代码（44 个已覆盖全部特征字段，扩展成本低）
+  - react-markdown 默认不渲染 raw HTML（防 XSS），如需支持 HTML 标签需额外配置 rehype-raw（暂不需要）
+- 下一步最佳动作：17 功能全 passing，无活动 change。后续可选：docs 话术章节同步、真实 LLM 调通体验、PG 迁移、非功能测试、真实业务 CSV 灌入验证

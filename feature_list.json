@@ -458,11 +458,14 @@
       ],
       "evidence": [
         "pytest -q 全量 → 222 passed（198→222，无回归；test_talk 33 重写二维匹配+占位符校验+CRUD，test_talk_ai 18 适配 AI_PROMPT 模板化，test_risk_config 17 适配 ROUND_N，test_task_generation 35 适配 scene=ROUND_N，test_workbench 14 适配，test_e2e 3 适配 has_talk+ROUND_N，新增 test_talk_coverage 12 覆盖度矩阵+联动提示）",
-        "npm run build → tsc + vite build 通过（Config 页新增 TalkConfigPanel 覆盖度矩阵+模板编辑抽屉+插入变量，RiskConfigPanel 适配 ROUND_N+coverage_hint 提示，TaskDetailModal 适配 has_talk 空状态）",
+        "占位符扩展后 pytest tests/test_talk.py tests/test_talk_coverage.py → 45 passed（占位符 16→44 无回归）",
+        "npm run build → tsc + vite build 通过（Config 页 Tab 布局 + TalkConfigPanel 居中 Modal + 变量全展示 + AI 话术 markdown 渲染）",
         "alembic upgrade head → talk-003 迁移成功（talk_templates 加 template_type/system_prompt/user_prompt 列 + 清空旧6条 + collection_schedules/tasks scene FIRST→ROUND_1 等映射）",
-        "真实联调（dev.db + uvicorn 8123）：覆盖度矩阵5格missing_count=0 + 占位符16个含标的名称 + 推荐话术has_talk=True内容渲染含供应商/标的名称 + 创建AI_PROMPT模板201 + 非法占位符{标地名称}400 + 改风险档3→4轮coverage_hint added_rounds=['ROUND_4'] missing_cells=1 ✓",
-        "后端：matcher.py 二维匹配去ANY兜底，renderer.py 占位符注册表16个+build_values，placeholders.py 校验/列表，generator.py 读AI_PROMPT模板+合规基线追加+is_compliant永开，coverage.py 覆盖度矩阵+联动校验纯函数，api/talk.py 模板CRUD+覆盖度+占位符，api/config.py update_risk附加coverage_hint",
-        "前端：TalkConfigPanel.tsx 覆盖度矩阵表格（缺口红色高亮+点击配置）+模板编辑抽屉（template_type切换+插入变量Tag/Select）+RiskConfigPanel coverage_hint弹提示+TaskDetailModal has_talk空状态"
+        "真实联调（dev.db + uvicorn 8123）：覆盖度矩阵5格missing_count=0 + 占位符44个含标的名称 + 推荐话术has_talk=True内容渲染含供应商/标的名称 + 创建AI_PROMPT模板201 + 非法占位符{标地名称}400 + 改风险档3→4轮coverage_hint added_rounds=['ROUND_4'] missing_cells=1 ✓",
+        "后端：matcher.py 二维匹配去ANY兜底，renderer.py 占位符注册表44个+build_values，placeholders.py 校验/列表（44占位符分7组），generator.py 读AI_PROMPT模板+合规基线追加+is_compliant永开，coverage.py 覆盖度矩阵+联动校验纯函数，api/talk.py 模板CRUD+覆盖度+占位符，api/config.py update_risk附加coverage_hint",
+        "前端：TalkConfigPanel.tsx 覆盖度矩阵表格（缺口红色高亮+点击配置）+模板编辑居中Modal（固定+AI同时展示+插入变量44个全平铺）+RiskConfigPanel coverage_hint弹提示+TaskDetailModal has_talk空状态+AI话术markdown渲染（react-markdown）",
+        "Config 页 Tab 布局（数据导入/风险档配置/话术配置）",
+        "OpenSpec change 已归档：openspec/changes/archive/2026-09-28-admin-talk-config/，主 specs 同步（新建 talk-config spec + task-engine spec 合并 scene=ROUND_N）"
       ],
       "notes": "OpenSpec change: openspec/changes/admin-talk-config/（proposal+design+specs+tasks 已生成，4/4 artifacts complete，49/49 tasks done）。BREAKING：①话术匹配键四维→二维 [风险档×轮次]，账龄段/用户特征降为变量；②scene 固定枚举 FIRST/SECOND/THIRD → ROUND_N（seq 驱动，支持任意轮次），collection_schedules/tasks 数据迁移映射；③丢弃现有 6 条默认话术清空重配；④不保留 ANY 兜底，未配显示空状态。Capabilities：talk-config（新）+ task-engine（改 scene 语义）。9 项核心决策（D1~D7 + 兜底严格按格 + 丢数据重配）。实施用 /opsx:apply。"
     }

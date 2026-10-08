@@ -6,59 +6,58 @@
 
 ## 当前已验证
 
-- **全部完成**：17 功能全 passing（含 talk-003 管理员话术配置后台，待归档）
-- 最近进展（Session 026）：
-  - 实施 talk-003：话术匹配四维→二维 [风险档×轮次]，scene→ROUND_N，固定+AI提示词模板，覆盖度矩阵，占位符校验，合规基线
-  - pytest 全量 222 passed（无回归），npm build 通过，真实联调全通
-  - 49/49 tasks done，feature_list talk-003 切 passing
-  - 待 /opsx:archive 归档
+- **全部完成**：17 功能全 passing（含 talk-003 管理员话术配置后台，已归档 + 后续 UI 优化）
+- 最近进展（Session 027）：
+  - 归档 admin-talk-config（主 specs 同步：新建 talk-config spec + task-engine spec 合并 scene=ROUND_N）
+  - Config 页改 Tab 布局（数据导入/风险档配置/话术配置）
+  - 话术编辑 UI 调整：右侧 Drawer → 居中 Modal，固定+AI 同时展示，名称/档/轮不可编辑，变量全平铺，去启用字段
+  - 占位符扩展到全部特征字段（16→44，覆盖 Order+OrderFeature 全部业务字段，分 7 组）
+  - AI 话术 markdown 渲染（react-markdown，防 XSS）
+  - pytest 45 passed（占位符扩展无回归），npm build 通过
 
-## 本轮改动总结（Session 026 talk-003 实施）
+## 本轮改动总结（Session 027 talk-003 归档 + UI 优化）
 
-- **话术匹配二维化**：[风险档×账龄段×场景×用户特征] → [风险档×轮次]，账龄段/用户特征降为变量，去 ANY 兜底
-- **scene 改 ROUND_N**：由 schedules seq 自动生成，支持任意轮次，迁移映射旧值
-- **两类模板一张表**：TalkTemplate 加 template_type（FIXED/AI_PROMPT），AI_PROMPT 存 system_prompt+user_prompt
-- **占位符注册表+校验**：16 个占位符（含标的名称等），保存校验非法占位符，防渲染残留
-- **覆盖度矩阵+联动提示**：[档×轮] 矩阵缺口高亮可点击，风险档变更提示复核（不阻断）
-- **AI 合规基线不可绕过**：后台 system prompt 追加合规基线，is_compliant 永开
-- **新增 API**：模板 CRUD（ADMIN）+ 占位符列表 + 覆盖度矩阵；PUT /risk 附加 coverage_hint
-- **新增前端**：TalkConfigPanel（覆盖度矩阵+模板编辑抽屉+插入变量）
+- **归档 admin-talk-config**：→ archive/2026-09-28-admin-talk-config，主 specs 同步
+- **Config 页 Tab 布局**：3 个 Tab（数据导入/风险档配置/话术配置）
+- **话术编辑 UI**：居中 Modal（固定模板话术 + AI 提示词同时展示）；名称/风险档/轮次不可编辑（按格子锁定）；占位符变量全部平铺展示；去"启用"字段
+- **占位符扩展 16→44**：覆盖 Order+OrderFeature 全部业务字段（基础5/标的7/催收7/供应商归属5/缴费历史3/活跃度8/资质标签9），金额/比率友好格式化
+- **AI 话术 markdown 渲染**：react-markdown 渲染 AI 生成话术，加排版样式，防 XSS
 
-## 之前几轮（Session 022/023/024/025，已归档/收尾）
+## 之前几轮（Session 022~026，已归档/收尾）
 
 - Session 022：data-004 归档 + AI 话术超时修复 + 自动分配 + 大文件导入超时
 - Session 023：task-003 单活跃任务区间模型，已归档
 - Session 024：ReassignTab 筛选+服务端分页、任务统计改名（纯前端小改）
 - Session 025：talk-003 规划（OpenSpec 4/4 artifacts + 9 项决策）
+- Session 026：talk-003 实施（49/49 tasks，222 passed，真实联调全通）
 
 ## 仍损坏或未验证
 
-- 已知缺陷：无（talk-003 已完整收尾验证）
+- 已知缺陷：无
 - 未验证路径：无
 - 风险/遗留：
-  - talk-003 BREAKING 已落地：旧 6 条话术清空重配（新 seed 6 条 ROUND_N 版）、scene 值迁移映射
-  - 占位符注册表代码维护，加新变量需改代码（MVP 16 个已覆盖主要字段）
-  - 一档一轮一类型唯一，不支持同格多模板 A/B（Non-Goal）
+  - docs/ 话术章节仍为旧描述（四维匹配/7 占位符/FIRST/SECOND/THIRD），需后续同步 talk-003 BREAKING 改造（PRD F-TALK-01/07、架构 §3.2.8/§4.3、测试 TC-TALK-01~04）——待办
+  - 占位符注册表代码维护（placeholders.py 44 个已覆盖全部特征字段）
+  - react-markdown 默认不渲染 raw HTML（防 XSS），如需 HTML 标签需加 rehype-raw
   - 前端 axios 默认 10s 超时对耗时操作需逐个设长超时（历史记录）
   - 测试数据/待支付订单.xlsx 和 .csv 误提交进仓库，需确认是否移除
 
 ## 下一步可选方向（按价值/紧迫度）
 
-**第一档 · 收尾**
-1. `/opsx:archive` 归档 admin-talk-config（specs 固化到主 specs）
-2. 真实 LLM 调通体验优化（glm 响应慢，可加流式 SSE）
+**第一档 · 文档同步**
+1. docs/ 话术章节同步 talk-003 BREAKING 改造（二维匹配/ROUND_N/44 占位符/覆盖度矩阵/AI 提示词模板）
 
 **第二档 · 让系统真正用起来**
-3. 真实联调深化：待支付+已支付 CSV 订单号对齐，验证已支付回写终态停催全流程
-4. 真实业务 CSV 灌入验证全流程
+2. 真实 LLM 调通体验优化（glm 响应慢，可加流式 SSE）
+3. 真实业务 CSV 灌入验证全流程
 
 **第三档 · 上生产前硬骨头**
-5. 真实风险算法替换（需时间切割防数据泄漏）
-6. PostgreSQL 迁移 + 时区统一
+4. 真实风险算法替换（需时间切割防数据泄漏）
+5. PostgreSQL 迁移 + 时区统一
 
 **第四档 · 体验/功能补全**
-7. 非功能测试（TC-NF-01/02 跑批性能 10000 笔≤5min、工作台列表≤2s）
-8. 话术模板 A/B 测试（同格多模板 priority 排序）
+6. 非功能测试（TC-NF-01/02 跑批性能 10000 笔≤5min、工作台列表≤2s）
+7. 话术模板 A/B 测试（同格多模板 priority 排序）
 
 ## 本轮改动总结（data-002，已归档）
 
@@ -112,17 +111,17 @@
 
 ## 状态文件位置
 
-- `feature_list.json` — 17 功能全 passing（含 talk-003，待归档）
-- `claude-progress.md` — Session 026 记录
-- `openspec/specs/` — 4 个 capability 主 specs（固化）+ admin-talk-config 待归档
-- `openspec/changes/admin-talk-config/` — change 完成（4/4 artifacts，49/49 tasks，待归档）
-- `openspec/changes/archive/` — data-002/003/004 + task-003 共 4 个已归档
+- `feature_list.json` — 17 功能全 passing（含 talk-003）
+- `claude-progress.md` — Session 027 记录
+- `openspec/specs/` — 5 个 capability 主 specs（含新建 talk-config）
+- `openspec/changes/` — 无活动 change（admin-talk-config 已归档到 archive/2026-09-28-*）
+- `openspec/changes/archive/` — data-002/003/004 + task-003 + admin-talk-config 共 5 个已归档
 
 ## 给下一轮会话的重启路径
 
 1. `pwd` 确认仓库根
-2. 读 `claude-progress.md` 找 Session 026
+2. 读 `claude-progress.md` 找 Session 027
 3. 读 `feature_list.json` 确认 17 功能 passing
-4. 检查 `openspec/changes/admin-talk-config/`（完成待归档）
+4. 检查 `openspec/changes/` 无活动 change（admin-talk-config 已归档）
 5. `./start.sh` 启动验证基线
-6. 运行 `/opsx:archive` 归档 admin-talk-config，或选「下一步可选方向」之一开始
+6. 选「下一步可选方向」之一开始（第一档：docs 话术章节同步）
